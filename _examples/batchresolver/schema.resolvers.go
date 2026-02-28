@@ -8,10 +8,33 @@ package batchresolver
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 )
+
+// ViewerCanDeleteBatch is the batch resolver for the viewerCanDeleteBatch field.
+func (r *profileResolver) ViewerCanDeleteBatch(ctx context.Context, objs []*Profile) ([]bool, error) {
+	r.resolverCalls.Add(1)
+	if r.resolveDelay > 0 {
+		time.Sleep(r.resolveDelay)
+	}
+	results := make([]bool, len(objs))
+	for i := range objs {
+		results[i] = true
+	}
+	return results, nil
+}
+
+// ViewerCanDeleteNonBatch is the resolver for the viewerCanDeleteNonBatch field.
+func (r *profileResolver) ViewerCanDeleteNonBatch(ctx context.Context, obj *Profile) (bool, error) {
+	r.resolverCalls.Add(1)
+	if r.resolveDelay > 0 {
+		time.Sleep(r.resolveDelay)
+	}
+	return true, nil
+}
 
 // Users is the resolver for the users field.
 func (r *queryResolver) Users(ctx context.Context) ([]*User, error) {
@@ -23,6 +46,10 @@ func (r *queryResolver) Users(ctx context.Context) ([]*User, error) {
 
 // NullableBatch is the batch resolver for the nullableBatch field.
 func (r *userResolver) NullableBatch(ctx context.Context, objs []*User) ([]*Profile, error) {
+	r.resolverCalls.Add(1)
+	if r.resolveDelay > 0 {
+		time.Sleep(r.resolveDelay)
+	}
 	if r.batchResultsWrongLen {
 		results := make([]*Profile, r.batchResultsLen)
 		errs := make([]error, len(objs))
@@ -79,6 +106,10 @@ func (r *userResolver) NullableBatch(ctx context.Context, objs []*User) ([]*Prof
 
 // NullableNonBatch is the resolver for the nullableNonBatch field.
 func (r *userResolver) NullableNonBatch(ctx context.Context, obj *User) (*Profile, error) {
+	r.resolverCalls.Add(1)
+	if r.resolveDelay > 0 {
+		time.Sleep(r.resolveDelay)
+	}
 	idx := r.userIndex(obj)
 	return resolveProfile(r.Resolver, idx)
 }
@@ -183,11 +214,37 @@ func (r *userResolver) DirectiveNonNullableNonBatch(ctx context.Context, obj *Us
 	return r.NonNullableNonBatch(ctx, obj)
 }
 
+// ProfileNonBatch is the resolver for the profileNonBatch field.
+func (r *userResolver) ProfileNonBatch(ctx context.Context, obj *User) ([]*Profile, error) {
+	r.resolverCalls.Add(1)
+	if r.resolveDelay > 0 {
+		time.Sleep(r.resolveDelay)
+	}
+	return r.userProfiles[obj], nil
+}
+
+// ProfileBatch is the batch resolver for the profileBatch field.
+func (r *userResolver) ProfileBatch(ctx context.Context, objs []*User) ([][]*Profile, error) {
+	r.resolverCalls.Add(1)
+	if r.resolveDelay > 0 {
+		time.Sleep(r.resolveDelay)
+	}
+	results := make([][]*Profile, len(objs))
+	for i, obj := range objs {
+		results[i] = r.userProfiles[obj]
+	}
+	return results, nil
+}
+
+// Profile returns ProfileResolver implementation.
+func (r *Resolver) Profile() ProfileResolver { return &profileResolver{r} }
+
 // Query returns QueryResolver implementation.
 func (r *Resolver) Query() QueryResolver { return &queryResolver{r} }
 
 // User returns UserResolver implementation.
 func (r *Resolver) User() UserResolver { return &userResolver{r} }
 
+type profileResolver struct{ *Resolver }
 type queryResolver struct{ *Resolver }
 type userResolver struct{ *Resolver }

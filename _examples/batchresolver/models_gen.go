@@ -3,23 +3,27 @@
 package batchresolver
 
 type Profile struct {
-	ID string `json:"id"`
+	ID                      string `json:"id"`
+	ViewerCanDeleteBatch    bool   `json:"viewerCanDeleteBatch"`
+	ViewerCanDeleteNonBatch bool   `json:"viewerCanDeleteNonBatch"`
 }
 
 type Query struct {
 }
 
 type User struct {
-	NullableBatch                    *Profile `json:"nullableBatch,omitempty"`
-	NullableNonBatch                 *Profile `json:"nullableNonBatch,omitempty"`
-	NullableBatchWithArg             *Profile `json:"nullableBatchWithArg,omitempty"`
-	NullableNonBatchWithArg          *Profile `json:"nullableNonBatchWithArg,omitempty"`
-	NonNullableBatch                 *Profile `json:"nonNullableBatch"`
-	NonNullableNonBatch              *Profile `json:"nonNullableNonBatch"`
-	DirectiveNullableBatch           *Profile `json:"directiveNullableBatch,omitempty"`
-	DirectiveNullableNonBatch        *Profile `json:"directiveNullableNonBatch,omitempty"`
-	DirectiveNullableBatchWithArg    *Profile `json:"directiveNullableBatchWithArg,omitempty"`
-	DirectiveNullableNonBatchWithArg *Profile `json:"directiveNullableNonBatchWithArg,omitempty"`
-	DirectiveNonNullableBatch        *Profile `json:"directiveNonNullableBatch"`
-	DirectiveNonNullableNonBatch     *Profile `json:"directiveNonNullableNonBatch"`
+	NullableBatch                    *Profile   `json:"nullableBatch,omitempty"`
+	NullableNonBatch                 *Profile   `json:"nullableNonBatch,omitempty"`
+	NullableBatchWithArg             *Profile   `json:"nullableBatchWithArg,omitempty"`
+	NullableNonBatchWithArg          *Profile   `json:"nullableNonBatchWithArg,omitempty"`
+	NonNullableBatch                 *Profile   `json:"nonNullableBatch"`
+	NonNullableNonBatch              *Profile   `json:"nonNullableNonBatch"`
+	DirectiveNullableBatch           *Profile   `json:"directiveNullableBatch,omitempty"`
+	DirectiveNullableNonBatch        *Profile   `json:"directiveNullableNonBatch,omitempty"`
+	DirectiveNullableBatchWithArg    *Profile   `json:"directiveNullableBatchWithArg,omitempty"`
+	DirectiveNullableNonBatchWithArg *Profile   `json:"directiveNullableNonBatchWithArg,omitempty"`
+	DirectiveNonNullableBatch        *Profile   `json:"directiveNonNullableBatch"`
+	DirectiveNonNullableNonBatch     *Profile   `json:"directiveNonNullableNonBatch"`
+	ProfileNonBatch                  []*Profile `json:"profileNonBatch"`
+	ProfileBatch                     []*Profile `json:"profileBatch"`
 }

@@ -23,8 +23,13 @@ type User {
     directiveNullableNonBatchWithArg(offset: Int!): Profile @goField(forceResolver: true)
     directiveNonNullableBatch: Profile! @goField(batch: true)
     directiveNonNullableNonBatch: Profile! @goField(forceResolver: true)
+
+    profileNonBatch: [Profile!]! @goField(forceResolver: true)
+    profileBatch: [Profile!]! @goField(batch: true)
 }
 
 type Profile {
     id: ID!
+    viewerCanDeleteBatch: Boolean! @goField(batch: true)
+    viewerCanDeleteNonBatch: Boolean! @goField(forceResolver: true)
 }

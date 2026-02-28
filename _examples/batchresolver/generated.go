@@ -27,6 +27,7 @@ func NewExecutableSchema(cfg Config) graphql.ExecutableSchema {
 type Config = graphql.Config[ResolverRoot, DirectiveRoot, ComplexityRoot]
 
 type ResolverRoot interface {
+	Profile() ProfileResolver
 	Query() QueryResolver
 	User() UserResolver
 }
@@ -36,7 +37,9 @@ type DirectiveRoot struct {
 
 type ComplexityRoot struct {
 	Profile struct {
-		ID func(childComplexity int) int
+		ID                      func(childComplexity int) int
+		ViewerCanDeleteBatch    func(childComplexity int) int
+		ViewerCanDeleteNonBatch func(childComplexity int) int
 	}
 
 	Query struct {
@@ -56,9 +59,15 @@ type ComplexityRoot struct {
 		NullableBatchWithArg             func(childComplexity int, offset int) int
 		NullableNonBatch                 func(childComplexity int) int
 		NullableNonBatchWithArg          func(childComplexity int, offset int) int
+		ProfileBatch                     func(childComplexity int) int
+		ProfileNonBatch                  func(childComplexity int) int
 	}
 }
 
+type ProfileResolver interface {
+	ViewerCanDeleteBatch(ctx context.Context, objs []*Profile) ([]bool, error)
+	ViewerCanDeleteNonBatch(ctx context.Context, obj *Profile) (bool, error)
+}
 type QueryResolver interface {
 	Users(ctx context.Context) ([]*User, error)
 }
@@ -75,6 +84,8 @@ type UserResolver interface {
 	DirectiveNullableNonBatchWithArg(ctx context.Context, obj *User, offset int) (*Profile, error)
 	DirectiveNonNullableBatch(ctx context.Context, objs []*User) ([]*Profile, error)
 	DirectiveNonNullableNonBatch(ctx context.Context, obj *User) (*Profile, error)
+	ProfileNonBatch(ctx context.Context, obj *User) ([]*Profile, error)
+	ProfileBatch(ctx context.Context, objs []*User) ([][]*Profile, error)
 }
 
 type executableSchema graphql.ExecutableSchemaState[ResolverRoot, DirectiveRoot, ComplexityRoot]
@@ -97,6 +108,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Profile.ID(childComplexity), true
+	case "Profile.viewerCanDeleteBatch":
+		if e.ComplexityRoot.Profile.ViewerCanDeleteBatch == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Profile.ViewerCanDeleteBatch(childComplexity), true
+	case "Profile.viewerCanDeleteNonBatch":
+		if e.ComplexityRoot.Profile.ViewerCanDeleteNonBatch == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Profile.ViewerCanDeleteNonBatch(childComplexity), true
 
 	case "Query.users":
 		if e.ComplexityRoot.Query.Users == nil {
@@ -197,6 +220,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.User.NullableNonBatchWithArg(childComplexity, args["offset"].(int)), true
+	case "User.profileBatch":
+		if e.ComplexityRoot.User.ProfileBatch == nil {
+			break
+		}
+
+		return e.ComplexityRoot.User.ProfileBatch(childComplexity), true
+	case "User.profileNonBatch":
+		if e.ComplexityRoot.User.ProfileNonBatch == nil {
+			break
+		}
+
+		return e.ComplexityRoot.User.ProfileNonBatch(childComplexity), true
 
 	}
 	return 0, false
@@ -420,6 +455,98 @@ func (ec *executionContext) fieldContext_Profile_id(_ context.Context, field gra
 	return fc, nil
 }
 
+func (ec *executionContext) _Profile_viewerCanDeleteBatch(ctx context.Context, field graphql.CollectedField, obj *Profile) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Profile_viewerCanDeleteBatch,
+		func(ctx context.Context) (any, error) {
+			return ec.resolveBatch_Profile_viewerCanDeleteBatch(ctx, field, obj)
+		},
+		nil,
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Profile_viewerCanDeleteBatch(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Profile",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+func (ec *executionContext) resolveBatch_Profile_viewerCanDeleteBatch(ctx context.Context, field graphql.CollectedField, obj *Profile) (any, error) {
+	resolver := ec.Resolvers.Profile()
+	group := graphql.GetBatchParentGroup(ctx, "Profile")
+	if group != nil {
+		parents, ok := group.Parents.([]*Profile)
+		if ok {
+			idx, ok := graphql.BatchParentIndex(ctx)
+			if ok {
+				key := field.Alias
+				if key == "" {
+					key = field.Name
+				}
+				result := group.GetFieldResult(key, func() (any, error) {
+					return resolver.ViewerCanDeleteBatch(ctx, parents)
+				})
+				return graphql.ResolveBatchGroupResult[bool](
+					ctx,
+					idx,
+					len(parents),
+					result,
+					"Profile.viewerCanDeleteBatch",
+				)
+			}
+		}
+	}
+
+	results, err := resolver.ViewerCanDeleteBatch(ctx, []*Profile{obj})
+	return graphql.ResolveBatchSingleResult[bool](
+		ctx,
+		results,
+		err,
+		"Profile.viewerCanDeleteBatch",
+	)
+}
+
+func (ec *executionContext) _Profile_viewerCanDeleteNonBatch(ctx context.Context, field graphql.CollectedField, obj *Profile) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Profile_viewerCanDeleteNonBatch,
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Profile().ViewerCanDeleteNonBatch(ctx, obj)
+		},
+		nil,
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Profile_viewerCanDeleteNonBatch(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Profile",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Query_users(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -468,6 +595,10 @@ func (ec *executionContext) fieldContext_Query_users(_ context.Context, field gr
 				return ec.fieldContext_User_directiveNonNullableBatch(ctx, field)
 			case "directiveNonNullableNonBatch":
 				return ec.fieldContext_User_directiveNonNullableNonBatch(ctx, field)
+			case "profileNonBatch":
+				return ec.fieldContext_User_profileNonBatch(ctx, field)
+			case "profileBatch":
+				return ec.fieldContext_User_profileBatch(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type User", field.Name)
 		},
@@ -609,6 +740,10 @@ func (ec *executionContext) fieldContext_User_nullableBatch(_ context.Context, f
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Profile_id(ctx, field)
+			case "viewerCanDeleteBatch":
+				return ec.fieldContext_Profile_viewerCanDeleteBatch(ctx, field)
+			case "viewerCanDeleteNonBatch":
+				return ec.fieldContext_Profile_viewerCanDeleteNonBatch(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Profile", field.Name)
 		},
@@ -676,6 +811,10 @@ func (ec *executionContext) fieldContext_User_nullableNonBatch(_ context.Context
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Profile_id(ctx, field)
+			case "viewerCanDeleteBatch":
+				return ec.fieldContext_Profile_viewerCanDeleteBatch(ctx, field)
+			case "viewerCanDeleteNonBatch":
+				return ec.fieldContext_Profile_viewerCanDeleteNonBatch(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Profile", field.Name)
 		},
@@ -709,6 +848,10 @@ func (ec *executionContext) fieldContext_User_nullableBatchWithArg(ctx context.C
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Profile_id(ctx, field)
+			case "viewerCanDeleteBatch":
+				return ec.fieldContext_Profile_viewerCanDeleteBatch(ctx, field)
+			case "viewerCanDeleteNonBatch":
+				return ec.fieldContext_Profile_viewerCanDeleteNonBatch(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Profile", field.Name)
 		},
@@ -789,6 +932,10 @@ func (ec *executionContext) fieldContext_User_nullableNonBatchWithArg(ctx contex
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Profile_id(ctx, field)
+			case "viewerCanDeleteBatch":
+				return ec.fieldContext_Profile_viewerCanDeleteBatch(ctx, field)
+			case "viewerCanDeleteNonBatch":
+				return ec.fieldContext_Profile_viewerCanDeleteNonBatch(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Profile", field.Name)
 		},
@@ -833,6 +980,10 @@ func (ec *executionContext) fieldContext_User_nonNullableBatch(_ context.Context
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Profile_id(ctx, field)
+			case "viewerCanDeleteBatch":
+				return ec.fieldContext_Profile_viewerCanDeleteBatch(ctx, field)
+			case "viewerCanDeleteNonBatch":
+				return ec.fieldContext_Profile_viewerCanDeleteNonBatch(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Profile", field.Name)
 		},
@@ -900,6 +1051,10 @@ func (ec *executionContext) fieldContext_User_nonNullableNonBatch(_ context.Cont
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Profile_id(ctx, field)
+			case "viewerCanDeleteBatch":
+				return ec.fieldContext_Profile_viewerCanDeleteBatch(ctx, field)
+			case "viewerCanDeleteNonBatch":
+				return ec.fieldContext_Profile_viewerCanDeleteNonBatch(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Profile", field.Name)
 		},
@@ -933,6 +1088,10 @@ func (ec *executionContext) fieldContext_User_directiveNullableBatch(_ context.C
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Profile_id(ctx, field)
+			case "viewerCanDeleteBatch":
+				return ec.fieldContext_Profile_viewerCanDeleteBatch(ctx, field)
+			case "viewerCanDeleteNonBatch":
+				return ec.fieldContext_Profile_viewerCanDeleteNonBatch(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Profile", field.Name)
 		},
@@ -1000,6 +1159,10 @@ func (ec *executionContext) fieldContext_User_directiveNullableNonBatch(_ contex
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Profile_id(ctx, field)
+			case "viewerCanDeleteBatch":
+				return ec.fieldContext_Profile_viewerCanDeleteBatch(ctx, field)
+			case "viewerCanDeleteNonBatch":
+				return ec.fieldContext_Profile_viewerCanDeleteNonBatch(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Profile", field.Name)
 		},
@@ -1033,6 +1196,10 @@ func (ec *executionContext) fieldContext_User_directiveNullableBatchWithArg(ctx 
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Profile_id(ctx, field)
+			case "viewerCanDeleteBatch":
+				return ec.fieldContext_Profile_viewerCanDeleteBatch(ctx, field)
+			case "viewerCanDeleteNonBatch":
+				return ec.fieldContext_Profile_viewerCanDeleteNonBatch(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Profile", field.Name)
 		},
@@ -1113,6 +1280,10 @@ func (ec *executionContext) fieldContext_User_directiveNullableNonBatchWithArg(c
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Profile_id(ctx, field)
+			case "viewerCanDeleteBatch":
+				return ec.fieldContext_Profile_viewerCanDeleteBatch(ctx, field)
+			case "viewerCanDeleteNonBatch":
+				return ec.fieldContext_Profile_viewerCanDeleteNonBatch(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Profile", field.Name)
 		},
@@ -1157,6 +1328,10 @@ func (ec *executionContext) fieldContext_User_directiveNonNullableBatch(_ contex
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Profile_id(ctx, field)
+			case "viewerCanDeleteBatch":
+				return ec.fieldContext_Profile_viewerCanDeleteBatch(ctx, field)
+			case "viewerCanDeleteNonBatch":
+				return ec.fieldContext_Profile_viewerCanDeleteNonBatch(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Profile", field.Name)
 		},
@@ -1224,11 +1399,123 @@ func (ec *executionContext) fieldContext_User_directiveNonNullableNonBatch(_ con
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Profile_id(ctx, field)
+			case "viewerCanDeleteBatch":
+				return ec.fieldContext_Profile_viewerCanDeleteBatch(ctx, field)
+			case "viewerCanDeleteNonBatch":
+				return ec.fieldContext_Profile_viewerCanDeleteNonBatch(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Profile", field.Name)
 		},
 	}
 	return fc, nil
+}
+
+func (ec *executionContext) _User_profileNonBatch(ctx context.Context, field graphql.CollectedField, obj *User) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_User_profileNonBatch,
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.User().ProfileNonBatch(ctx, obj)
+		},
+		nil,
+		ec.marshalNProfile2ᚕᚖgithubᚗcomᚋ99designsᚋgqlgenᚋ_examplesᚋbatchresolverᚐProfileᚄ,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_User_profileNonBatch(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "User",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Profile_id(ctx, field)
+			case "viewerCanDeleteBatch":
+				return ec.fieldContext_Profile_viewerCanDeleteBatch(ctx, field)
+			case "viewerCanDeleteNonBatch":
+				return ec.fieldContext_Profile_viewerCanDeleteNonBatch(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Profile", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _User_profileBatch(ctx context.Context, field graphql.CollectedField, obj *User) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_User_profileBatch,
+		func(ctx context.Context) (any, error) {
+			return ec.resolveBatch_User_profileBatch(ctx, field, obj)
+		},
+		nil,
+		ec.marshalNProfile2ᚕᚖgithubᚗcomᚋ99designsᚋgqlgenᚋ_examplesᚋbatchresolverᚐProfileᚄ,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_User_profileBatch(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "User",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Profile_id(ctx, field)
+			case "viewerCanDeleteBatch":
+				return ec.fieldContext_Profile_viewerCanDeleteBatch(ctx, field)
+			case "viewerCanDeleteNonBatch":
+				return ec.fieldContext_Profile_viewerCanDeleteNonBatch(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Profile", field.Name)
+		},
+	}
+	return fc, nil
+}
+func (ec *executionContext) resolveBatch_User_profileBatch(ctx context.Context, field graphql.CollectedField, obj *User) (any, error) {
+	resolver := ec.Resolvers.User()
+	group := graphql.GetBatchParentGroup(ctx, "User")
+	if group != nil {
+		parents, ok := group.Parents.([]*User)
+		if ok {
+			idx, ok := graphql.BatchParentIndex(ctx)
+			if ok {
+				key := field.Alias
+				if key == "" {
+					key = field.Name
+				}
+				result := group.GetFieldResult(key, func() (any, error) {
+					return resolver.ProfileBatch(ctx, parents)
+				})
+				return graphql.ResolveBatchGroupResult[[]*Profile](
+					ctx,
+					idx,
+					len(parents),
+					result,
+					"User.profileBatch",
+				)
+			}
+		}
+	}
+
+	results, err := resolver.ProfileBatch(ctx, []*User{obj})
+	return graphql.ResolveBatchSingleResult[[]*Profile](
+		ctx,
+		results,
+		err,
+		"User.profileBatch",
+	)
 }
 
 func (ec *executionContext) ___Directive_name(ctx context.Context, field graphql.CollectedField, obj *introspection.Directive) (ret graphql.Marshaler) {
@@ -2699,8 +2986,80 @@ func (ec *executionContext) _Profile(ctx context.Context, sel ast.SelectionSet, 
 		case "id":
 			out.Values[i] = ec._Profile_id(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
-				out.Invalids++
+				atomic.AddUint32(&out.Invalids, 1)
 			}
+		case "viewerCanDeleteBatch":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Profile_viewerCanDeleteBatch(ctx, field, obj)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "viewerCanDeleteNonBatch":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Profile_viewerCanDeleteNonBatch(ctx, field, obj)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -3215,6 +3574,78 @@ func (ec *executionContext) _User(ctx context.Context, sel ast.SelectionSet, obj
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "profileNonBatch":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._User_profileNonBatch(ctx, field, obj)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "profileBatch":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._User_profileBatch(ctx, field, obj)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -3623,6 +4054,23 @@ func (ec *executionContext) marshalNInt2int(ctx context.Context, sel ast.Selecti
 
 func (ec *executionContext) marshalNProfile2githubᚗcomᚋ99designsᚋgqlgenᚋ_examplesᚋbatchresolverᚐProfile(ctx context.Context, sel ast.SelectionSet, v Profile) graphql.Marshaler {
 	return ec._Profile(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNProfile2ᚕᚖgithubᚗcomᚋ99designsᚋgqlgenᚋ_examplesᚋbatchresolverᚐProfileᚄ(ctx context.Context, sel ast.SelectionSet, v []*Profile) graphql.Marshaler {
+	ctx = graphql.WithBatchParents(ctx, "Profile", v)
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNProfile2ᚖgithubᚗcomᚋ99designsᚋgqlgenᚋ_examplesᚋbatchresolverᚐProfile(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
 }
 
 func (ec *executionContext) marshalNProfile2ᚖgithubᚗcomᚋ99designsᚋgqlgenᚋ_examplesᚋbatchresolverᚐProfile(ctx context.Context, sel ast.SelectionSet, v *Profile) graphql.Marshaler {

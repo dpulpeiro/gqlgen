@@ -1,5 +1,10 @@
 package batchresolver
 
+import (
+	"sync/atomic"
+	"time"
+)
+
 // This file will not be regenerated automatically.
 //
 // It serves as dependency injection for your app, add any dependencies you require
@@ -8,7 +13,10 @@ package batchresolver
 type Resolver struct {
 	users                   []*User
 	profiles                []*Profile
+	userProfiles            map[*User][]*Profile
 	profileErrIdx           int
+	resolveDelay            time.Duration
+	resolverCalls           atomic.Int64
 	profileErrWithValueIdxs map[int]struct{}
 	profileErrListIdxs      map[int]struct{}
 	profileGqlErrNoPathIdxs map[int]struct{}

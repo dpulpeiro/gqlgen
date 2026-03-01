@@ -16,7 +16,7 @@ import (
 
 // CoverBatch is the batch resolver for the coverBatch field.
 func (r *profileResolver) CoverBatch(ctx context.Context, objs []*Profile) ([]*Image, error) {
-	r.coverBatchCalls.Add(1)
+	r.coverBatchCalls++
 	results := make([]*Image, len(objs))
 	for i, obj := range objs {
 		idx := r.profileIndex(obj)
@@ -27,7 +27,7 @@ func (r *profileResolver) CoverBatch(ctx context.Context, objs []*Profile) ([]*I
 
 // CoverNonBatch is the resolver for the coverNonBatch field.
 func (r *profileResolver) CoverNonBatch(ctx context.Context, obj *Profile) (*Image, error) {
-	r.coverNonBatchCalls.Add(1)
+	r.coverNonBatchCalls++
 	idx := r.profileIndex(obj)
 	return resolveImage(r.Resolver, idx)
 }
@@ -204,7 +204,7 @@ func (r *userResolver) DirectiveNonNullableNonBatch(ctx context.Context, obj *Us
 
 // ProfileBatch is the batch resolver for the profileBatch field.
 func (r *userResolver) ProfileBatch(ctx context.Context, objs []*User) ([]*Profile, error) {
-	r.profileBatchCalls.Add(1)
+	r.profileBatchCalls++
 	results := make([]*Profile, len(objs))
 	for i, obj := range objs {
 		idx := r.userIndex(obj)
@@ -217,44 +217,12 @@ func (r *userResolver) ProfileBatch(ctx context.Context, objs []*User) ([]*Profi
 
 // ProfileNonBatch is the resolver for the profileNonBatch field.
 func (r *userResolver) ProfileNonBatch(ctx context.Context, obj *User) (*Profile, error) {
-	r.profileNonBatchCalls.Add(1)
+	r.profileNonBatchCalls++
 	idx := r.userIndex(obj)
 	if idx < 0 || idx >= len(r.profiles) {
 		return nil, fmt.Errorf("profile not set at index %d", idx)
 	}
 	return r.profiles[idx], nil
-}
-
-// ProfileConnectionBatch is the batch resolver for the profileConnectionBatch field.
-func (r *userResolver) ProfileConnectionBatch(ctx context.Context, objs []*User) ([]*ProfilesConnection, error) {
-	r.profileConnectionBatchCalls.Add(1)
-	results := make([]*ProfilesConnection, len(objs))
-	for i, obj := range objs {
-		idx := r.userIndex(obj)
-		var profile *Profile
-		if idx >= 0 && idx < len(r.profiles) {
-			profile = r.profiles[idx]
-		}
-		results[i] = &ProfilesConnection{
-			Edges:      []*ProfileEdge{{Node: profile, Cursor: fmt.Sprintf("cursor-%d", idx)}},
-			TotalCount: 1,
-		}
-	}
-	return results, nil
-}
-
-// ProfileConnectionNonBatch is the resolver for the profileConnectionNonBatch field.
-func (r *userResolver) ProfileConnectionNonBatch(ctx context.Context, obj *User) (*ProfilesConnection, error) {
-	r.profileConnectionNonBatchCalls.Add(1)
-	idx := r.userIndex(obj)
-	var profile *Profile
-	if idx >= 0 && idx < len(r.profiles) {
-		profile = r.profiles[idx]
-	}
-	return &ProfilesConnection{
-		Edges:      []*ProfileEdge{{Node: profile, Cursor: fmt.Sprintf("cursor-%d", idx)}},
-		TotalCount: 1,
-	}, nil
 }
 
 // Profile returns ProfileResolver implementation.

@@ -700,6 +700,247 @@ func TestBatchResolver_Nested_Connection_CallCount(t *testing.T) {
 	)
 }
 
+// TestBatchResolver_Nested_ExpectedBatching verifies the expected call counts
+// for nested batch resolvers once batch context propagation is implemented.
+// These tests currently FAIL because nested batching does not propagate batch
+// parent context from batch resolver results to child resolvers.
+// See nested-batch-propagation.md for the full problem description.
+func TestBatchResolver_Nested_ExpectedBatching(t *testing.T) {
+	const n = 10
+
+	setup := func() (*Resolver, *client.Client) {
+		users := make([]*User, n)
+		profiles := make([]*Profile, n)
+		images := make([]*Image, n)
+		for i := 0; i < n; i++ {
+			users[i] = &User{}
+			profiles[i] = &Profile{ID: fmt.Sprintf("p%d", i)}
+			images[i] = &Image{URL: fmt.Sprintf("https://img/%d", i)}
+		}
+		r := &Resolver{
+			users:         users,
+			profiles:      profiles,
+			images:        images,
+			profileErrIdx: -1,
+		}
+		return r, newTestClient(r)
+	}
+
+	// Query 1: users → profileBatch → coverBatch
+	// Expected: 1 call per batch level.
+	t.Run("SimpleNestedBatch", func(t *testing.T) {
+		resolver, c := setup()
+
+		var resp struct {
+			Users []struct {
+				ProfileBatch *struct {
+					ID         string `json:"id"`
+					CoverBatch *struct {
+						URL string `json:"url"`
+					} `json:"coverBatch"`
+				} `json:"profileBatch"`
+			} `json:"users"`
+		}
+
+		err := c.Post(`query {
+			users {
+				profileBatch {
+					id
+					coverBatch { url }
+				}
+			}
+		}`, &resp)
+		require.NoError(t, err)
+		require.Len(t, resp.Users, n)
+		for i, u := range resp.Users {
+			require.NotNil(t, u.ProfileBatch, "user %d profile nil", i)
+			require.Equal(t, fmt.Sprintf("p%d", i), u.ProfileBatch.ID)
+			require.NotNil(t, u.ProfileBatch.CoverBatch, "user %d cover nil", i)
+			require.Equal(t, fmt.Sprintf("https://img/%d", i), u.ProfileBatch.CoverBatch.URL)
+		}
+
+		require.Equal(t, int32(1), resolver.profileBatchCalls.Load(),
+			"profileBatch should be called once for all users")
+		require.Equal(t, int32(1), resolver.coverBatchCalls.Load(),
+			"coverBatch should be called once for all profiles")
+	})
+
+	// Query 2: usersA/usersB aliases → profileBatch → coverBatch
+	// Expected: each root alias is an independent batch scope.
+	t.Run("AliasedRoots", func(t *testing.T) {
+		resolver, c := setup()
+
+		type userWithProfile struct {
+			ProfileBatch *struct {
+				ID         string `json:"id"`
+				CoverBatch *struct {
+					URL string `json:"url"`
+				} `json:"coverBatch"`
+			} `json:"profileBatch"`
+		}
+		var resp struct {
+			UsersA []userWithProfile `json:"usersA"`
+			UsersB []userWithProfile `json:"usersB"`
+		}
+
+		err := c.Post(`query {
+			usersA: users {
+				profileBatch {
+					id
+					coverBatch { url }
+				}
+			}
+			usersB: users {
+				profileBatch {
+					id
+					coverBatch { url }
+				}
+			}
+		}`, &resp)
+		require.NoError(t, err)
+		require.Len(t, resp.UsersA, n)
+		require.Len(t, resp.UsersB, n)
+		for i := 0; i < n; i++ {
+			require.NotNil(t, resp.UsersA[i].ProfileBatch, "usersA[%d] profile nil", i)
+			require.Equal(t, fmt.Sprintf("p%d", i), resp.UsersA[i].ProfileBatch.ID)
+			require.NotNil(t, resp.UsersA[i].ProfileBatch.CoverBatch, "usersA[%d] cover nil", i)
+			require.Equal(t, fmt.Sprintf("https://img/%d", i), resp.UsersA[i].ProfileBatch.CoverBatch.URL)
+
+			require.NotNil(t, resp.UsersB[i].ProfileBatch, "usersB[%d] profile nil", i)
+			require.Equal(t, fmt.Sprintf("p%d", i), resp.UsersB[i].ProfileBatch.ID)
+			require.NotNil(t, resp.UsersB[i].ProfileBatch.CoverBatch, "usersB[%d] cover nil", i)
+			require.Equal(t, fmt.Sprintf("https://img/%d", i), resp.UsersB[i].ProfileBatch.CoverBatch.URL)
+		}
+
+		require.Equal(t, int32(2), resolver.profileBatchCalls.Load(),
+			"profileBatch should be called once per root alias")
+		require.Equal(t, int32(2), resolver.coverBatchCalls.Load(),
+			"coverBatch should be called once per root alias's profiles")
+	})
+
+	// Query 3: users → profileConnectionBatch → edges → node → coverBatch
+	// Expected: batch context propagates through non-batched intermediate types.
+	t.Run("ConnectionNestedBatch", func(t *testing.T) {
+		resolver, c := setup()
+
+		var resp struct {
+			Users []struct {
+				Conn *struct {
+					Edges []struct {
+						Node *struct {
+							ID         string `json:"id"`
+							CoverBatch *struct {
+								URL string `json:"url"`
+							} `json:"coverBatch"`
+						} `json:"node"`
+					} `json:"edges"`
+				} `json:"conn"`
+			} `json:"users"`
+		}
+
+		err := c.Post(`query {
+			users {
+				conn: profileConnectionBatch {
+					edges {
+						node {
+							id
+							coverBatch { url }
+						}
+					}
+				}
+			}
+		}`, &resp)
+		require.NoError(t, err)
+		require.Len(t, resp.Users, n)
+		for i, u := range resp.Users {
+			require.NotNil(t, u.Conn, "user %d connection nil", i)
+			require.Len(t, u.Conn.Edges, 1, "user %d edges", i)
+			node := u.Conn.Edges[0].Node
+			require.NotNil(t, node, "user %d node nil", i)
+			require.Equal(t, fmt.Sprintf("p%d", i), node.ID)
+			require.NotNil(t, node.CoverBatch, "user %d cover nil", i)
+			require.Equal(t, fmt.Sprintf("https://img/%d", i), node.CoverBatch.URL)
+		}
+
+		require.Equal(t, int32(1), resolver.profileConnectionBatchCalls.Load(),
+			"profileConnectionBatch should be called once for all users")
+		require.Equal(t, int32(1), resolver.coverBatchCalls.Load(),
+			"coverBatch should be called once for all profiles across connection edges")
+	})
+
+	// Query 4: aliased roots × aliased connection fields → coverBatch
+	// Expected: each aliased field creates its own independent batch scope.
+	t.Run("AliasedRootsAndConnections", func(t *testing.T) {
+		resolver, c := setup()
+
+		type connResp struct {
+			Edges []struct {
+				Node *struct {
+					ID         string `json:"id"`
+					CoverBatch *struct {
+						URL string `json:"url"`
+					} `json:"coverBatch"`
+				} `json:"node"`
+			} `json:"edges"`
+		}
+		var resp struct {
+			UsersA []struct {
+				ConnA *connResp `json:"connA"`
+				ConnB *connResp `json:"connB"`
+			} `json:"usersA"`
+			UsersB []struct {
+				ConnC *connResp `json:"connC"`
+				ConnD *connResp `json:"connD"`
+			} `json:"usersB"`
+		}
+
+		err := c.Post(`query {
+			usersA: users {
+				connA: profileConnectionBatch {
+					edges { node { id coverBatch { url } } }
+				}
+				connB: profileConnectionBatch {
+					edges { node { id coverBatch { url } } }
+				}
+			}
+			usersB: users {
+				connC: profileConnectionBatch {
+					edges { node { id coverBatch { url } } }
+				}
+				connD: profileConnectionBatch {
+					edges { node { id coverBatch { url } } }
+				}
+			}
+		}`, &resp)
+		require.NoError(t, err)
+
+		assertConn := func(conn *connResp, label string, i int) {
+			t.Helper()
+			require.NotNil(t, conn, "%s user %d connection nil", label, i)
+			require.Len(t, conn.Edges, 1, "%s user %d edges", label, i)
+			node := conn.Edges[0].Node
+			require.NotNil(t, node, "%s user %d node nil", label, i)
+			require.Equal(t, fmt.Sprintf("p%d", i), node.ID)
+			require.NotNil(t, node.CoverBatch, "%s user %d cover nil", label, i)
+			require.Equal(t, fmt.Sprintf("https://img/%d", i), node.CoverBatch.URL)
+		}
+
+		require.Len(t, resp.UsersA, n)
+		require.Len(t, resp.UsersB, n)
+		for i := 0; i < n; i++ {
+			assertConn(resp.UsersA[i].ConnA, "usersA.connA", i)
+			assertConn(resp.UsersA[i].ConnB, "usersA.connB", i)
+			assertConn(resp.UsersB[i].ConnC, "usersB.connC", i)
+			assertConn(resp.UsersB[i].ConnD, "usersB.connD", i)
+		}
+
+		require.Equal(t, int32(4), resolver.profileConnectionBatchCalls.Load(),
+			"profileConnectionBatch should be called once per aliased field (2 roots × 2 aliases)")
+		require.Equal(t, int32(4), resolver.coverBatchCalls.Load(),
+			"coverBatch should be called once per aliased connection's profiles (4 independent scopes)")
+	})
+}
+
 func BenchmarkBatchResolver_SingleLevel(b *testing.B) {
 	const n = 100
 	users := make([]*User, n)

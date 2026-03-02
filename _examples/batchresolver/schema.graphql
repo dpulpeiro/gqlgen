@@ -26,6 +26,8 @@ type User {
 
     profileBatch: Profile
     profileNonBatch: Profile
+    profileConnectionBatch: ProfilesConnection
+    profileConnectionNonBatch: ProfilesConnection
 }
 
 type Profile {
@@ -37,4 +39,14 @@ type Profile {
 
 type Image {
     url: String!
+}
+
+type ProfilesConnection {
+    edges: [ProfileEdge!]!
+    totalCount: Int!
+}
+
+type ProfileEdge {
+    node: Profile!
+    cursor: ID!
 }

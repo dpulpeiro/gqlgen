@@ -103,22 +103,6 @@ func (b *builder) buildField(obj *Object, field *ast.FieldDefinition) (*Field, e
 		f.TypeReference = b.Binder.PointerTo(f.TypeReference)
 	}
 
-	// Set Batch flag from config (independent of resolver setting)
-	if fieldCfg, ok := b.Config.Models[obj.Name]; ok {
-		if fieldEntry, ok := fieldCfg.Fields[field.Name]; ok {
-			f.Batch = fieldEntry.Batch
-			if f.Batch {
-				// batch resolvers are always user-provided
-				f.IsResolver = true
-			}
-		}
-	}
-
-	if f.IsResolver && b.Config.ResolversAlwaysReturnPointers && !f.TypeReference.IsPtr() &&
-		f.TypeReference.IsStruct() {
-		f.TypeReference = b.Binder.PointerTo(f.TypeReference)
-	}
-
 	return &f, nil
 }
 
@@ -679,6 +663,93 @@ func (f *Field) ShortBatchResolverDeclaration() string {
 		res,
 		templates.CurrentImports.LookupType(f.TypeReference.GO),
 	)
+}
+
+// NestedBatchPath describes a traversal from a batch resolver's return type
+// down to a descendant OBJECT type that has batch fields.
+type NestedBatchPath struct {
+	TargetTypeName string            // e.g. "Profile"
+	TargetGoType   types.Type        // the Go type (e.g. *Profile), for use with | ref
+	Steps          []NestedBatchStep // e.g. [{Edges, true}, {Node, false}]
+}
+
+// NestedBatchStep is a single field traversal in a NestedBatchPath.
+type NestedBatchStep struct {
+	GoFieldName string // e.g. "Edges", "Node"
+	IsList      bool   // true for list fields (e.g. edges: [ProfileEdge!]!)
+}
+
+// NestedBatchPaths computes traversal paths from this field's return type
+// down to descendant OBJECT types that have batch-enabled fields.
+// This is used for nested batch propagation through intermediate types
+// (e.g. ProfilesConnection → Edges[] → Node → Profile with coverBatch).
+func (f *Field) NestedBatchPaths(schema *ast.Schema, models config.TypeMap, objects Objects) []NestedBatchPath {
+	if f.TypeReference == nil || f.TypeReference.Definition == nil {
+		return nil
+	}
+	if f.TypeReference.Definition.Kind != ast.Object {
+		return nil
+	}
+	// Build a map of type name → Go types.Type from all codegen objects
+	goTypes := make(map[string]types.Type, len(objects))
+	for _, obj := range objects {
+		if obj.Type != nil {
+			goTypes[obj.Name] = obj.Reference()
+		}
+	}
+	var paths []NestedBatchPath
+	findNestedBatchPaths(schema, models, goTypes, f.TypeReference.Definition, nil, &paths, 0)
+	return paths
+}
+
+func findNestedBatchPaths(
+	schema *ast.Schema,
+	models config.TypeMap,
+	goTypes map[string]types.Type,
+	def *ast.Definition,
+	steps []NestedBatchStep,
+	paths *[]NestedBatchPath,
+	depth int,
+) {
+	if depth > 4 {
+		return
+	}
+	for _, fd := range def.Fields {
+		typeName := fd.Type.Name()
+		typeDef := schema.Types[typeName]
+		if typeDef == nil || typeDef.Kind != ast.Object {
+			continue
+		}
+		isList := fd.Type.Elem != nil
+		step := NestedBatchStep{
+			GoFieldName: templates.ToGo(fd.Name),
+			IsList:      isList,
+		}
+		newSteps := append(append([]NestedBatchStep{}, steps...), step)
+		if typeHasBatchFields(typeName, models) {
+			*paths = append(*paths, NestedBatchPath{
+				TargetTypeName: typeName,
+				TargetGoType:   goTypes[typeName],
+				Steps:          newSteps,
+			})
+		} else {
+			// Recurse through non-batch intermediate types
+			findNestedBatchPaths(schema, models, goTypes, typeDef, newSteps, paths, depth+1)
+		}
+	}
+}
+
+func typeHasBatchFields(typeName string, models config.TypeMap) bool {
+	entry, ok := models[typeName]
+	if !ok {
+		return false
+	}
+	for _, field := range entry.Fields {
+		if field.Batch {
+			return true
+		}
+	}
+	return false
 }
 
 func (f *Field) GoNameUnexported() string {

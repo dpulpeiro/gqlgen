@@ -28,6 +28,8 @@ type User {
     profileNonBatch: Profile
     profileConnectionBatch: ProfilesConnection
     profileConnectionNonBatch: ProfilesConnection
+    childUserBatch: User
+    childUserNonBatch: User
 }
 
 type Profile {

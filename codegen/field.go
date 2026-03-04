@@ -727,9 +727,16 @@ func findNestedBatchPaths(
 		}
 		newSteps := append(append([]NestedBatchStep{}, steps...), step)
 		if typeHasBatchFields(typeName, models) {
+			goType := goTypes[typeName]
+			if goType == nil {
+				// Type exists in schema but has no codegen object
+				// (e.g. external model, federation type). Skip — nested
+				// batch propagation requires a known Go type.
+				continue
+			}
 			*paths = append(*paths, NestedBatchPath{
 				TargetTypeName: typeName,
-				TargetGoType:   goTypes[typeName],
+				TargetGoType:   goType,
 				Steps:          newSteps,
 			})
 		} else {

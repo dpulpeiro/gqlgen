@@ -56,12 +56,21 @@ type BatchParentGroup struct {
 // NewBatchParentGroup creates a BatchParentGroup with an indexMap for pointer-based
 // index lookup. This is used for nested batch propagation through intermediate types
 // (e.g. connection → edges → node) where the path doesn't contain a PathIndex.
+//
+// Duplicate pointers are deduplicated: when the same pointer appears at multiple
+// positions (common with dataloaders that return cached pointers), it is included
+// only once in the Parents slice so the batch resolver is not called with
+// redundant inputs and IndexOf always returns a unique index.
 func NewBatchParentGroup[T any](parents []T) *BatchParentGroup {
 	m := make(map[any]int, len(parents))
-	for i, p := range parents {
-		m[any(p)] = i
+	deduped := make([]T, 0, len(parents))
+	for _, p := range parents {
+		if _, exists := m[any(p)]; !exists {
+			m[any(p)] = len(deduped)
+			deduped = append(deduped, p)
+		}
 	}
-	return &BatchParentGroup{Parents: parents, indexMap: m}
+	return &BatchParentGroup{Parents: deduped, indexMap: m}
 }
 
 // IndexOf returns the index of obj in this group's parent slice.
@@ -185,6 +194,11 @@ func (g *BatchParentGroup) GetFieldResult(
 	result := res.(*BatchFieldResult)
 	result.once.Do(func() {
 		defer close(result.done)
+		defer func() {
+			if r := recover(); r != nil {
+				result.Err = fmt.Errorf("panic in batch resolver: %v", r)
+			}
+		}()
 		result.Results, result.Err = resolve()
 	})
 	<-result.done

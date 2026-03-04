@@ -456,6 +456,57 @@ func TestBatchParentGroup_IndexOf_NoIndexMap(t *testing.T) {
 	require.False(t, ok)
 }
 
+func TestGetFieldResult_RecoversPanic(t *testing.T) {
+	group := &BatchParentGroup{Parents: []string{"a", "b", "c"}}
+
+	const n = 10
+	results := make([]*BatchFieldResult, n)
+	var wg sync.WaitGroup
+
+	for i := range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			results[i] = group.GetFieldResult("panicking", func() (any, error) {
+				panic("resolver blew up")
+			})
+		}()
+	}
+	wg.Wait()
+
+	for i := range n {
+		require.NotNil(t, results[i], "goroutine %d should get a result", i)
+		require.Nil(t, results[i].Results, "Results should be nil after panic")
+		require.Error(t, results[i].Err)
+		require.Contains(t, results[i].Err.Error(), "panic in batch resolver")
+		require.Contains(t, results[i].Err.Error(), "resolver blew up")
+	}
+}
+
+func TestNewBatchParentGroup_DeduplicatesDuplicatePointers(t *testing.T) {
+	type Profile struct{ ID string }
+	p1 := &Profile{ID: "p1"}
+	p2 := &Profile{ID: "p2"}
+
+	// p1 appears at positions 0 and 2 in the input (e.g. from a dataloader cache).
+	// The deduplicated Parents should be [p1, p2] and IndexOf should return
+	// indices into that deduplicated slice.
+	group := NewBatchParentGroup([]*Profile{p1, p2, p1})
+
+	parents := group.Parents.([]*Profile)
+	require.Len(t, parents, 2, "duplicates should be removed")
+	require.Same(t, p1, parents[0])
+	require.Same(t, p2, parents[1])
+
+	idx, ok := group.IndexOf(p1)
+	require.True(t, ok)
+	require.Equal(t, 0, idx)
+
+	idx, ok = group.IndexOf(p2)
+	require.True(t, ok)
+	require.Equal(t, 1, idx)
+}
+
 func TestGetFieldResult_DeduplicatesAcrossGoroutines(t *testing.T) {
 	group := &BatchParentGroup{Parents: []string{"a", "b", "c"}}
 

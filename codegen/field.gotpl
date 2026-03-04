@@ -178,7 +178,9 @@ func (ec *executionContext) resolveBatch_{{$object.Name}}_{{$field.Name}}(ctx co
 						for _, v0 := range results {
 							if v0 == nil { continue }
 							{{- range $i, $step := $path.Steps }}
-							{{- if $step.IsList }}
+							{{- if $step.IsTypeAssert }}
+							if v{{ add $i 1 }}, ok := v{{ $i }}.({{ $step.AssertGoType | ref }}); ok {
+							{{- else if $step.IsList }}
 							for _, v{{ add $i 1 }} := range v{{ $i }}.{{ $step.GoFieldName }} {
 								if v{{ add $i 1 }} == nil { continue }
 							{{- else }}

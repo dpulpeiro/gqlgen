@@ -376,9 +376,9 @@ func TestField_ShortBatchResolverDeclaration(t *testing.T) {
 
 func TestField_NestedBatchPaths_NilGoType(t *testing.T) {
 	// Schema where Connection → edges: [Edge!]! → node: Profile,
-	// and Profile has batch fields in models. When Profile IS in AllObjects
-	// (the full object list) but NOT in the per-file Objects subset (as in
-	// follow-schema layout), the path should still be found via AllObjects.
+	// and Profile has batch fields in models but NO corresponding Object
+	// in the objects list. This simulates an external/federation type
+	// that has no codegen object — goTypes[typeName] will be nil.
 	schema := gqlparser.MustLoadSchema(&ast2.Source{
 		Name: "test.graphql",
 		Input: `
@@ -406,16 +406,8 @@ func TestField_NestedBatchPaths_NilGoType(t *testing.T) {
 		},
 	}
 
-	profileType := types.NewNamed(
-		types.NewTypeName(token.NoPos, nil, "Profile", nil),
-		types.NewStruct(nil, nil),
-		nil,
-	)
-
-	// AllObjects includes Profile (from a different schema file).
-	// This simulates the cross-file scenario in follow-schema layout
-	// where the per-file Objects would NOT include Profile, but AllObjects does.
-	allObjects := Objects{
+	// Objects list does NOT include Profile — simulates external model with no Go type.
+	objects := Objects{
 		{
 			Definition: schema.Types["Connection"],
 			Type:       types.Typ[types.Int],
@@ -423,10 +415,6 @@ func TestField_NestedBatchPaths_NilGoType(t *testing.T) {
 		{
 			Definition: schema.Types["Edge"],
 			Type:       types.Typ[types.Int],
-		},
-		{
-			Definition: schema.Types["Profile"],
-			Type:       profileType,
 		},
 	}
 
@@ -436,20 +424,14 @@ func TestField_NestedBatchPaths_NilGoType(t *testing.T) {
 		},
 	}
 
-	// With AllObjects containing Profile, the path should be found.
-	paths := f.NestedBatchPaths(schema, models, allObjects)
-	require.Len(t, paths, 1)
-	require.Equal(t, "Profile", paths[0].TargetTypeName)
-	require.Len(t, paths[0].Steps, 2)
-	require.Equal(t, "Edges", paths[0].Steps[0].GoFieldName)
-	require.True(t, paths[0].Steps[0].IsList)
-	require.Equal(t, "Node", paths[0].Steps[1].GoFieldName)
-	require.False(t, paths[0].Steps[1].IsList)
+	// Should not panic and should return no paths (Profile has no Go type).
+	paths := f.NestedBatchPaths(schema, models, objects)
+	require.Empty(t, paths)
 }
 
 func TestField_NestedBatchPaths_WithGoType(t *testing.T) {
-	// Same schema as above, but Profile IS in the objects list.
-	// Verifies the path is found when the Go type is present.
+	// Profile IS in the objects list with field bindings on intermediate types.
+	// Verifies the path is found using actual Go field names from bindings.
 	schema := gqlparser.MustLoadSchema(&ast2.Source{
 		Name: "test.graphql",
 		Input: `
@@ -487,10 +469,24 @@ func TestField_NestedBatchPaths_WithGoType(t *testing.T) {
 		{
 			Definition: schema.Types["Connection"],
 			Type:       types.Typ[types.Int],
+			Fields: []*Field{
+				{
+					FieldDefinition: &ast2.FieldDefinition{Name: "edges"},
+					GoFieldName:     "Edges",
+					GoFieldType:     GoFieldVariable,
+				},
+			},
 		},
 		{
 			Definition: schema.Types["Edge"],
 			Type:       types.Typ[types.Int],
+			Fields: []*Field{
+				{
+					FieldDefinition: &ast2.FieldDefinition{Name: "node"},
+					GoFieldName:     "Node",
+					GoFieldType:     GoFieldVariable,
+				},
+			},
 		},
 		{
 			Definition: schema.Types["Profile"],
@@ -512,4 +508,440 @@ func TestField_NestedBatchPaths_WithGoType(t *testing.T) {
 	require.True(t, paths[0].Steps[0].IsList)
 	require.Equal(t, "Node", paths[0].Steps[1].GoFieldName)
 	require.False(t, paths[0].Steps[1].IsList)
+}
+
+func TestField_NestedBatchPaths_CrossFile(t *testing.T) {
+	// In follow-schema layout, per-file Objects only contain types from that
+	// schema file. AllObjects contains every type across all files.
+	// This test verifies that NestedBatchPaths finds paths when the target
+	// batch type (Profile) is in AllObjects but would be absent from the
+	// per-file subset. The template passes $.AllObjects so the function
+	// receives the full list.
+	schema := gqlparser.MustLoadSchema(&ast2.Source{
+		Name: "test.graphql",
+		Input: `
+			type Connection {
+				edges: [Edge!]!
+			}
+			type Edge {
+				node: Profile!
+			}
+			type Profile {
+				id: ID!
+				coverBatch: Image
+			}
+			type Image {
+				url: String!
+			}
+		`,
+	})
+
+	models := config.TypeMap{
+		"Profile": {
+			Fields: map[string]config.TypeMapField{
+				"coverBatch": {Batch: true},
+			},
+		},
+	}
+
+	profileType := types.NewNamed(
+		types.NewTypeName(token.NoPos, nil, "Profile", nil),
+		types.NewStruct(nil, nil),
+		nil,
+	)
+
+	// Simulate per-file Objects for connection.graphql — only Connection and Edge.
+	perFileObjects := Objects{
+		{
+			Definition: schema.Types["Connection"],
+			Type:       types.Typ[types.Int],
+			Fields: []*Field{
+				{
+					FieldDefinition: &ast2.FieldDefinition{Name: "edges"},
+					GoFieldName:     "Edges",
+					GoFieldType:     GoFieldVariable,
+				},
+			},
+		},
+		{
+			Definition: schema.Types["Edge"],
+			Type:       types.Typ[types.Int],
+			Fields: []*Field{
+				{
+					FieldDefinition: &ast2.FieldDefinition{Name: "node"},
+					GoFieldName:     "Node",
+					GoFieldType:     GoFieldVariable,
+				},
+			},
+		},
+	}
+
+	// Simulate AllObjects — includes Profile from profile.graphql.
+	allObjects := make(Objects, len(perFileObjects), len(perFileObjects)+1)
+	copy(allObjects, perFileObjects)
+	allObjects = append(allObjects, &Object{
+		Definition: schema.Types["Profile"],
+		Type:       profileType,
+	})
+
+	f := Field{
+		TypeReference: &config.TypeReference{
+			Definition: schema.Types["Connection"],
+		},
+	}
+
+	// With only per-file objects (no Profile), path cannot be resolved.
+	paths := f.NestedBatchPaths(schema, models, perFileObjects)
+	require.Empty(t, paths, "per-file objects should not find cross-file batch target")
+
+	// With AllObjects (includes Profile), the path is found.
+	paths = f.NestedBatchPaths(schema, models, allObjects)
+	require.Len(t, paths, 1)
+	require.Equal(t, "Profile", paths[0].TargetTypeName)
+	require.Len(t, paths[0].Steps, 2)
+	require.Equal(t, "Edges", paths[0].Steps[0].GoFieldName)
+	require.True(t, paths[0].Steps[0].IsList)
+	require.Equal(t, "Node", paths[0].Steps[1].GoFieldName)
+	require.False(t, paths[0].Steps[1].IsList)
+}
+
+func TestField_NestedBatchPaths_SkipsResolverFields(t *testing.T) {
+	// When an intermediate field is a resolver (not a direct struct field),
+	// the path through that field must be skipped because the generated
+	// template uses direct struct field access (v.FieldName).
+	schema := gqlparser.MustLoadSchema(&ast2.Source{
+		Name: "test.graphql",
+		Input: `
+			type Connection {
+				edges: [Edge!]!
+			}
+			type Edge {
+				node: Profile!
+			}
+			type Profile {
+				id: ID!
+				coverBatch: Image
+			}
+			type Image {
+				url: String!
+			}
+		`,
+	})
+
+	models := config.TypeMap{
+		"Profile": {
+			Fields: map[string]config.TypeMapField{
+				"coverBatch": {Batch: true},
+			},
+		},
+	}
+
+	profileType := types.NewNamed(
+		types.NewTypeName(token.NoPos, nil, "Profile", nil),
+		types.NewStruct(nil, nil),
+		nil,
+	)
+
+	objects := Objects{
+		{
+			Definition: schema.Types["Connection"],
+			Type:       types.Typ[types.Int],
+			Fields: []*Field{
+				{
+					FieldDefinition: &ast2.FieldDefinition{Name: "edges"},
+					GoFieldName:     "Edges",
+					GoFieldType:     GoFieldVariable,
+				},
+			},
+		},
+		{
+			Definition: schema.Types["Edge"],
+			Type:       types.Typ[types.Int],
+			Fields: []*Field{
+				{
+					FieldDefinition: &ast2.FieldDefinition{Name: "node"},
+					GoFieldName:     "Node",
+					IsResolver:      true, // resolver field — cannot be accessed as v.Node
+				},
+			},
+		},
+		{
+			Definition: schema.Types["Profile"],
+			Type:       profileType,
+		},
+	}
+
+	f := Field{
+		TypeReference: &config.TypeReference{
+			Definition: schema.Types["Connection"],
+		},
+	}
+
+	// Path through Edge.node is skipped because node is a resolver.
+	paths := f.NestedBatchPaths(schema, models, objects)
+	require.Empty(t, paths)
+}
+
+func TestField_NestedBatchPaths_UnionAsStartingPoint(t *testing.T) {
+	// Batch field returns a union type. Each union member that has batch
+	// fields should produce a path with a type-assertion step.
+	schema := gqlparser.MustLoadSchema(&ast2.Source{
+		Name: "test.graphql",
+		Input: `
+			union SearchResult = Article | Video
+			type Article {
+				id: ID!
+			}
+			type Video {
+				id: ID!
+				tags: [Tag!]
+			}
+			type Tag {
+				id: ID!
+			}
+		`,
+	})
+
+	models := config.TypeMap{
+		"Video": {
+			Fields: map[string]config.TypeMapField{
+				"tags": {Batch: true},
+			},
+		},
+	}
+
+	videoType := types.NewNamed(
+		types.NewTypeName(token.NoPos, nil, "Video", nil),
+		types.NewStruct(nil, nil),
+		nil,
+	)
+	articleType := types.NewNamed(
+		types.NewTypeName(token.NoPos, nil, "Article", nil),
+		types.NewStruct(nil, nil),
+		nil,
+	)
+
+	objects := Objects{
+		{
+			Definition: schema.Types["Video"],
+			Type:       videoType,
+		},
+		{
+			Definition: schema.Types["Article"],
+			Type:       articleType,
+		},
+	}
+
+	f := Field{
+		TypeReference: &config.TypeReference{
+			Definition: schema.Types["SearchResult"],
+		},
+	}
+
+	paths := f.NestedBatchPaths(schema, models, objects)
+	require.Len(t, paths, 1)
+	require.Equal(t, "Video", paths[0].TargetTypeName)
+	require.Len(t, paths[0].Steps, 1)
+	require.True(t, paths[0].Steps[0].IsTypeAssert)
+	// Reference() wraps non-nilable types in a pointer.
+	require.Equal(t, types.NewPointer(videoType), paths[0].Steps[0].AssertGoType)
+}
+
+func TestField_NestedBatchPaths_UnionDuringTraversal(t *testing.T) {
+	// A struct field points to a union type. The path should include the
+	// field-access step followed by a type-assertion step.
+	schema := gqlparser.MustLoadSchema(&ast2.Source{
+		Name: "test.graphql",
+		Input: `
+			type Container {
+				item: SearchResult
+			}
+			union SearchResult = Article | Video
+			type Article {
+				id: ID!
+			}
+			type Video {
+				id: ID!
+				tags: [Tag!]
+			}
+			type Tag {
+				id: ID!
+			}
+		`,
+	})
+
+	models := config.TypeMap{
+		"Video": {
+			Fields: map[string]config.TypeMapField{
+				"tags": {Batch: true},
+			},
+		},
+	}
+
+	videoType := types.NewNamed(
+		types.NewTypeName(token.NoPos, nil, "Video", nil),
+		types.NewStruct(nil, nil),
+		nil,
+	)
+	articleType := types.NewNamed(
+		types.NewTypeName(token.NoPos, nil, "Article", nil),
+		types.NewStruct(nil, nil),
+		nil,
+	)
+
+	objects := Objects{
+		{
+			Definition: schema.Types["Container"],
+			Type:       types.Typ[types.Int],
+			Fields: []*Field{
+				{
+					FieldDefinition: &ast2.FieldDefinition{Name: "item"},
+					GoFieldName:     "Item",
+					GoFieldType:     GoFieldVariable,
+				},
+			},
+		},
+		{
+			Definition: schema.Types["Video"],
+			Type:       videoType,
+		},
+		{
+			Definition: schema.Types["Article"],
+			Type:       articleType,
+		},
+	}
+
+	f := Field{
+		TypeReference: &config.TypeReference{
+			Definition: schema.Types["Container"],
+		},
+	}
+
+	paths := f.NestedBatchPaths(schema, models, objects)
+	require.Len(t, paths, 1)
+	require.Equal(t, "Video", paths[0].TargetTypeName)
+	require.Len(t, paths[0].Steps, 2)
+	// First step: field access to "Item"
+	require.Equal(t, "Item", paths[0].Steps[0].GoFieldName)
+	require.False(t, paths[0].Steps[0].IsTypeAssert)
+	// Second step: type assertion to Video
+	require.True(t, paths[0].Steps[1].IsTypeAssert)
+	require.Equal(t, types.NewPointer(videoType), paths[0].Steps[1].AssertGoType)
+}
+
+func TestField_NestedBatchPaths_UnionMemberWithoutBatchFields(t *testing.T) {
+	// Union where no member has batch fields but a member has a child
+	// object with batch fields — should recurse through the member.
+	schema := gqlparser.MustLoadSchema(&ast2.Source{
+		Name: "test.graphql",
+		Input: `
+			union ResultType = Wrapper
+			type Wrapper {
+				profile: Profile!
+			}
+			type Profile {
+				id: ID!
+				coverBatch: Image
+			}
+			type Image {
+				url: String!
+			}
+		`,
+	})
+
+	models := config.TypeMap{
+		"Profile": {
+			Fields: map[string]config.TypeMapField{
+				"coverBatch": {Batch: true},
+			},
+		},
+	}
+
+	profileType := types.NewNamed(
+		types.NewTypeName(token.NoPos, nil, "Profile", nil),
+		types.NewStruct(nil, nil),
+		nil,
+	)
+	wrapperType := types.NewNamed(
+		types.NewTypeName(token.NoPos, nil, "Wrapper", nil),
+		types.NewStruct(nil, nil),
+		nil,
+	)
+
+	objects := Objects{
+		{
+			Definition: schema.Types["Wrapper"],
+			Type:       wrapperType,
+			Fields: []*Field{
+				{
+					FieldDefinition: &ast2.FieldDefinition{Name: "profile"},
+					GoFieldName:     "Profile",
+					GoFieldType:     GoFieldVariable,
+				},
+			},
+		},
+		{
+			Definition: schema.Types["Profile"],
+			Type:       profileType,
+		},
+	}
+
+	f := Field{
+		TypeReference: &config.TypeReference{
+			Definition: schema.Types["ResultType"],
+		},
+	}
+
+	paths := f.NestedBatchPaths(schema, models, objects)
+	require.Len(t, paths, 1)
+	require.Equal(t, "Profile", paths[0].TargetTypeName)
+	require.Len(t, paths[0].Steps, 2)
+	// First step: type assertion to Wrapper
+	require.True(t, paths[0].Steps[0].IsTypeAssert)
+	require.Equal(t, types.NewPointer(wrapperType), paths[0].Steps[0].AssertGoType)
+	// Second step: field access to Profile
+	require.Equal(t, "Profile", paths[0].Steps[1].GoFieldName)
+	require.False(t, paths[0].Steps[1].IsTypeAssert)
+}
+
+func TestField_NestedBatchPaths_UnionMemberNilGoType(t *testing.T) {
+	// Union member exists in schema but has no Go type in objects.
+	// Should be skipped gracefully.
+	schema := gqlparser.MustLoadSchema(&ast2.Source{
+		Name: "test.graphql",
+		Input: `
+			union SearchResult = Article | Video
+			type Article {
+				id: ID!
+			}
+			type Video {
+				id: ID!
+				tags: [Tag!]
+			}
+			type Tag {
+				id: ID!
+			}
+		`,
+	})
+
+	models := config.TypeMap{
+		"Video": {
+			Fields: map[string]config.TypeMapField{
+				"tags": {Batch: true},
+			},
+		},
+	}
+
+	// No objects provided — all Go types are nil.
+	objects := Objects{}
+
+	f := Field{
+		TypeReference: &config.TypeReference{
+			Definition: schema.Types["SearchResult"],
+		},
+	}
+
+	// Should not panic and should return no paths.
+	paths := f.NestedBatchPaths(schema, models, objects)
+	require.Empty(t, paths)
 }

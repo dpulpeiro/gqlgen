@@ -675,8 +675,10 @@ type NestedBatchPath struct {
 
 // NestedBatchStep is a single field traversal in a NestedBatchPath.
 type NestedBatchStep struct {
-	GoFieldName string // e.g. "Edges", "Node"
-	IsList      bool   // true for list fields (e.g. edges: [ProfileEdge!]!)
+	GoFieldName  string     // e.g. "Edges", "Node"
+	IsList       bool       // true for list fields (e.g. edges: [ProfileEdge!]!)
+	IsTypeAssert bool       // true for type assertion steps (union member access)
+	AssertGoType types.Type // Go type to assert to for union members
 }
 
 // NestedBatchPaths computes traversal paths from this field's return type
@@ -687,18 +689,20 @@ func (f *Field) NestedBatchPaths(schema *ast.Schema, models config.TypeMap, obje
 	if f.TypeReference == nil || f.TypeReference.Definition == nil {
 		return nil
 	}
-	if f.TypeReference.Definition.Kind != ast.Object {
+	if f.TypeReference.Definition.Kind != ast.Object && f.TypeReference.Definition.Kind != ast.Union {
 		return nil
 	}
-	// Build a map of type name → Go types.Type from all codegen objects
+	// Build lookup maps from all codegen objects
 	goTypes := make(map[string]types.Type, len(objects))
+	objectsByName := make(map[string]*Object, len(objects))
 	for _, obj := range objects {
+		objectsByName[obj.Name] = obj
 		if obj.Type != nil {
 			goTypes[obj.Name] = obj.Reference()
 		}
 	}
 	var paths []NestedBatchPath
-	findNestedBatchPaths(schema, models, goTypes, f.TypeReference.Definition, nil, &paths, 0)
+	findNestedBatchPaths(schema, models, goTypes, objectsByName, f.TypeReference.Definition, nil, &paths, 0)
 	return paths
 }
 
@@ -706,6 +710,7 @@ func findNestedBatchPaths(
 	schema *ast.Schema,
 	models config.TypeMap,
 	goTypes map[string]types.Type,
+	objectsByName map[string]*Object,
 	def *ast.Definition,
 	steps []NestedBatchStep,
 	paths *[]NestedBatchPath,
@@ -714,18 +719,72 @@ func findNestedBatchPaths(
 	if depth > 4 {
 		return
 	}
+
+	// Handle union types: create a type-assertion step for each object member.
+	if def.Kind == ast.Union {
+		for _, memberName := range def.Types {
+			memberDef := schema.Types[memberName]
+			if memberDef == nil || memberDef.Kind != ast.Object {
+				continue
+			}
+			goType := goTypes[memberName]
+			if goType == nil {
+				continue
+			}
+			step := NestedBatchStep{
+				IsTypeAssert: true,
+				AssertGoType: goType,
+			}
+			newSteps := append(append([]NestedBatchStep{}, steps...), step)
+			if typeHasBatchFields(memberName, models) {
+				*paths = append(*paths, NestedBatchPath{
+					TargetTypeName: memberName,
+					TargetGoType:   goType,
+					Steps:          newSteps,
+				})
+			} else {
+				// Recurse into union member to find batch fields deeper.
+				findNestedBatchPaths(schema, models, goTypes, objectsByName, memberDef, newSteps, paths, depth+1)
+			}
+		}
+		return
+	}
+
+	// Look up the codegen Object for the current type to get field bindings.
+	obj := objectsByName[def.Name]
 	for _, fd := range def.Fields {
 		typeName := fd.Type.Name()
 		typeDef := schema.Types[typeName]
-		if typeDef == nil || typeDef.Kind != ast.Object {
+		if typeDef == nil || (typeDef.Kind != ast.Object && typeDef.Kind != ast.Union) {
 			continue
+		}
+		// Determine the Go field name for this traversal step.
+		// The generated template uses direct struct field access (v.FieldName),
+		// so we must skip fields that are resolvers or methods — only
+		// GoFieldVariable fields can be accessed this way.
+		goFieldName := templates.ToGo(fd.Name)
+		if obj != nil {
+			if boundField := findObjField(obj, fd.Name); boundField != nil {
+				if boundField.IsResolver || boundField.GoFieldType != GoFieldVariable {
+					continue
+				}
+				goFieldName = boundField.GoFieldName
+			}
 		}
 		isList := fd.Type.Elem != nil
 		step := NestedBatchStep{
-			GoFieldName: templates.ToGo(fd.Name),
+			GoFieldName: goFieldName,
 			IsList:      isList,
 		}
 		newSteps := append(append([]NestedBatchStep{}, steps...), step)
+
+		// For union fields, recurse into the union definition (which will
+		// create type-assertion steps for each member).
+		if typeDef.Kind == ast.Union {
+			findNestedBatchPaths(schema, models, goTypes, objectsByName, typeDef, newSteps, paths, depth+1)
+			continue
+		}
+
 		if typeHasBatchFields(typeName, models) {
 			goType := goTypes[typeName]
 			if goType == nil {
@@ -741,9 +800,19 @@ func findNestedBatchPaths(
 			})
 		} else {
 			// Recurse through non-batch intermediate types
-			findNestedBatchPaths(schema, models, goTypes, typeDef, newSteps, paths, depth+1)
+			findNestedBatchPaths(schema, models, goTypes, objectsByName, typeDef, newSteps, paths, depth+1)
 		}
 	}
+}
+
+// findObjField returns the Field with the given GraphQL name from the object, or nil.
+func findObjField(obj *Object, name string) *Field {
+	for _, f := range obj.Fields {
+		if f.Name == name {
+			return f
+		}
+	}
+	return nil
 }
 
 func typeHasBatchFields(typeName string, models config.TypeMap) bool {

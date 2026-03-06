@@ -600,6 +600,8 @@ func (ec *executionContext) resolveBatch_Profile_coverBatch(ctx context.Context,
 					len(parents),
 					result,
 					"Profile.coverBatch",
+					"",
+					nil,
 				)
 			}
 		}
@@ -1005,6 +1007,8 @@ func (ec *executionContext) resolveBatch_User_nullableBatch(ctx context.Context,
 					len(parents),
 					result,
 					"User.nullableBatch",
+					"",
+					nil,
 				)
 			}
 		}
@@ -1125,6 +1129,8 @@ func (ec *executionContext) resolveBatch_User_nullableBatchWithArg(ctx context.C
 					len(parents),
 					result,
 					"User.nullableBatchWithArg",
+					"",
+					nil,
 				)
 			}
 		}
@@ -1245,6 +1251,8 @@ func (ec *executionContext) resolveBatch_User_nonNullableBatch(ctx context.Conte
 					len(parents),
 					result,
 					"User.nonNullableBatch",
+					"",
+					nil,
 				)
 			}
 		}
@@ -1353,6 +1361,8 @@ func (ec *executionContext) resolveBatch_User_directiveNullableBatch(ctx context
 					len(parents),
 					result,
 					"User.directiveNullableBatch",
+					"",
+					nil,
 				)
 			}
 		}
@@ -1473,6 +1483,8 @@ func (ec *executionContext) resolveBatch_User_directiveNullableBatchWithArg(ctx 
 					len(parents),
 					result,
 					"User.directiveNullableBatchWithArg",
+					"",
+					nil,
 				)
 			}
 		}
@@ -1593,6 +1605,8 @@ func (ec *executionContext) resolveBatch_User_directiveNonNullableBatch(ctx cont
 					len(parents),
 					result,
 					"User.directiveNonNullableBatch",
+					"",
+					nil,
 				)
 			}
 		}
@@ -1701,6 +1715,8 @@ func (ec *executionContext) resolveBatch_User_profileBatch(ctx context.Context, 
 					len(parents),
 					result,
 					"User.profileBatch",
+					"",
+					nil,
 				)
 			}
 		}
@@ -1807,6 +1823,8 @@ func (ec *executionContext) resolveBatch_User_profileConnectionBatch(ctx context
 					len(parents),
 					result,
 					"User.profileConnectionBatch",
+					"",
+					nil,
 				)
 			}
 		}

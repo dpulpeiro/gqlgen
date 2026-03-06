@@ -257,6 +257,22 @@ func (r *userResolver) ProfileConnectionNonBatch(ctx context.Context, obj *User)
 	}, nil
 }
 
+// ChildUserBatch is the batch resolver for the childUserBatch field.
+func (r *userResolver) ChildUserBatch(ctx context.Context, objs []*User) ([]*User, error) {
+	r.childUserBatchCalls.Add(1)
+	results := make([]*User, len(objs))
+	for i, obj := range objs {
+		results[i] = r.childUserMap[obj]
+	}
+	return results, nil
+}
+
+// ChildUserNonBatch is the resolver for the childUserNonBatch field.
+func (r *userResolver) ChildUserNonBatch(ctx context.Context, obj *User) (*User, error) {
+	r.childUserNonBatchCalls.Add(1)
+	return r.childUserMap[obj], nil
+}
+
 // Profile returns ProfileResolver implementation.
 func (r *Resolver) Profile() ProfileResolver { return &profileResolver{r} }
 

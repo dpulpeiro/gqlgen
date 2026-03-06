@@ -42,4 +42,6 @@ type User struct {
 	ProfileNonBatch                  *Profile            `json:"profileNonBatch,omitempty"`
 	ProfileConnectionBatch           *ProfilesConnection `json:"profileConnectionBatch,omitempty"`
 	ProfileConnectionNonBatch        *ProfilesConnection `json:"profileConnectionNonBatch,omitempty"`
+	ChildUserBatch                   *User               `json:"childUserBatch,omitempty"`
+	ChildUserNonBatch                *User               `json:"childUserNonBatch,omitempty"`
 }

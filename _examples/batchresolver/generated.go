@@ -61,6 +61,8 @@ type ComplexityRoot struct {
 	}
 
 	User struct {
+		ChildUserBatch                   func(childComplexity int) int
+		ChildUserNonBatch                func(childComplexity int) int
 		DirectiveNonNullableBatch        func(childComplexity int) int
 		DirectiveNonNullableNonBatch     func(childComplexity int) int
 		DirectiveNullableBatch           func(childComplexity int) int
@@ -104,6 +106,8 @@ type UserResolver interface {
 	ProfileNonBatch(ctx context.Context, obj *User) (*Profile, error)
 	ProfileConnectionBatch(ctx context.Context, objs []*User) ([]*ProfilesConnection, error)
 	ProfileConnectionNonBatch(ctx context.Context, obj *User) (*ProfilesConnection, error)
+	ChildUserBatch(ctx context.Context, objs []*User) ([]*User, error)
+	ChildUserNonBatch(ctx context.Context, obj *User) (*User, error)
 }
 
 type executableSchema graphql.ExecutableSchemaState[ResolverRoot, DirectiveRoot, ComplexityRoot]
@@ -179,6 +183,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.Query.Users(childComplexity), true
 
+	case "User.childUserBatch":
+		if e.ComplexityRoot.User.ChildUserBatch == nil {
+			break
+		}
+
+		return e.ComplexityRoot.User.ChildUserBatch(childComplexity), true
+	case "User.childUserNonBatch":
+		if e.ComplexityRoot.User.ChildUserNonBatch == nil {
+			break
+		}
+
+		return e.ComplexityRoot.User.ChildUserNonBatch(childComplexity), true
 	case "User.directiveNonNullableBatch":
 		if e.ComplexityRoot.User.DirectiveNonNullableBatch == nil {
 			break
@@ -842,6 +858,10 @@ func (ec *executionContext) fieldContext_Query_users(_ context.Context, field gr
 				return ec.fieldContext_User_profileConnectionBatch(ctx, field)
 			case "profileConnectionNonBatch":
 				return ec.fieldContext_User_profileConnectionNonBatch(ctx, field)
+			case "childUserBatch":
+				return ec.fieldContext_User_childUserBatch(ctx, field)
+			case "childUserNonBatch":
+				return ec.fieldContext_User_childUserNonBatch(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type User", field.Name)
 		},
@@ -1960,6 +1980,183 @@ func (ec *executionContext) fieldContext_User_profileConnectionNonBatch(_ contex
 				return ec.fieldContext_ProfilesConnection_totalCount(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type ProfilesConnection", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _User_childUserBatch(ctx context.Context, field graphql.CollectedField, obj *User) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_User_childUserBatch,
+		func(ctx context.Context) (any, error) {
+			return ec.resolveBatch_User_childUserBatch(ctx, field, obj)
+		},
+		nil,
+		ec.marshalOUser2ᚖgithubᚗcomᚋ99designsᚋgqlgenᚋ_examplesᚋbatchresolverᚐUser,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_User_childUserBatch(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "User",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "nullableBatch":
+				return ec.fieldContext_User_nullableBatch(ctx, field)
+			case "nullableNonBatch":
+				return ec.fieldContext_User_nullableNonBatch(ctx, field)
+			case "nullableBatchWithArg":
+				return ec.fieldContext_User_nullableBatchWithArg(ctx, field)
+			case "nullableNonBatchWithArg":
+				return ec.fieldContext_User_nullableNonBatchWithArg(ctx, field)
+			case "nonNullableBatch":
+				return ec.fieldContext_User_nonNullableBatch(ctx, field)
+			case "nonNullableNonBatch":
+				return ec.fieldContext_User_nonNullableNonBatch(ctx, field)
+			case "directiveNullableBatch":
+				return ec.fieldContext_User_directiveNullableBatch(ctx, field)
+			case "directiveNullableNonBatch":
+				return ec.fieldContext_User_directiveNullableNonBatch(ctx, field)
+			case "directiveNullableBatchWithArg":
+				return ec.fieldContext_User_directiveNullableBatchWithArg(ctx, field)
+			case "directiveNullableNonBatchWithArg":
+				return ec.fieldContext_User_directiveNullableNonBatchWithArg(ctx, field)
+			case "directiveNonNullableBatch":
+				return ec.fieldContext_User_directiveNonNullableBatch(ctx, field)
+			case "directiveNonNullableNonBatch":
+				return ec.fieldContext_User_directiveNonNullableNonBatch(ctx, field)
+			case "profileBatch":
+				return ec.fieldContext_User_profileBatch(ctx, field)
+			case "profileNonBatch":
+				return ec.fieldContext_User_profileNonBatch(ctx, field)
+			case "profileConnectionBatch":
+				return ec.fieldContext_User_profileConnectionBatch(ctx, field)
+			case "profileConnectionNonBatch":
+				return ec.fieldContext_User_profileConnectionNonBatch(ctx, field)
+			case "childUserBatch":
+				return ec.fieldContext_User_childUserBatch(ctx, field)
+			case "childUserNonBatch":
+				return ec.fieldContext_User_childUserNonBatch(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type User", field.Name)
+		},
+	}
+	return fc, nil
+}
+func (ec *executionContext) resolveBatch_User_childUserBatch(ctx context.Context, field graphql.CollectedField, obj *User) (any, error) {
+	resolver := ec.Resolvers.User()
+	group := graphql.GetBatchParentGroup(ctx, "User")
+	if group != nil {
+		parents, ok := group.Parents.([]*User)
+		if ok {
+			idx, ok := graphql.BatchParentIndex(ctx)
+			if !ok {
+				idx2, found := group.IndexOf(obj)
+				if found {
+					idx = ast.PathIndex(idx2)
+					ok = true
+				}
+			}
+			if ok && int(idx) >= 0 && int(idx) < len(parents) && parents[int(idx)] == obj {
+				key := field.Alias
+				if key == "" {
+					key = field.Name
+				}
+				result := group.GetFieldResult(key, func() (any, error) {
+					return resolver.ChildUserBatch(ctx, parents)
+				})
+				return graphql.ResolveBatchGroupResult[*User](
+					ctx,
+					idx,
+					len(parents),
+					result,
+					"User.childUserBatch",
+					"User",
+					nil,
+				)
+			}
+		}
+	}
+
+	results, err := resolver.ChildUserBatch(ctx, []*User{obj})
+	return graphql.ResolveBatchSingleResult[*User](
+		ctx,
+		results,
+		err,
+		"User.childUserBatch",
+	)
+}
+
+func (ec *executionContext) _User_childUserNonBatch(ctx context.Context, field graphql.CollectedField, obj *User) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_User_childUserNonBatch,
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.User().ChildUserNonBatch(ctx, obj)
+		},
+		nil,
+		ec.marshalOUser2ᚖgithubᚗcomᚋ99designsᚋgqlgenᚋ_examplesᚋbatchresolverᚐUser,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_User_childUserNonBatch(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "User",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "nullableBatch":
+				return ec.fieldContext_User_nullableBatch(ctx, field)
+			case "nullableNonBatch":
+				return ec.fieldContext_User_nullableNonBatch(ctx, field)
+			case "nullableBatchWithArg":
+				return ec.fieldContext_User_nullableBatchWithArg(ctx, field)
+			case "nullableNonBatchWithArg":
+				return ec.fieldContext_User_nullableNonBatchWithArg(ctx, field)
+			case "nonNullableBatch":
+				return ec.fieldContext_User_nonNullableBatch(ctx, field)
+			case "nonNullableNonBatch":
+				return ec.fieldContext_User_nonNullableNonBatch(ctx, field)
+			case "directiveNullableBatch":
+				return ec.fieldContext_User_directiveNullableBatch(ctx, field)
+			case "directiveNullableNonBatch":
+				return ec.fieldContext_User_directiveNullableNonBatch(ctx, field)
+			case "directiveNullableBatchWithArg":
+				return ec.fieldContext_User_directiveNullableBatchWithArg(ctx, field)
+			case "directiveNullableNonBatchWithArg":
+				return ec.fieldContext_User_directiveNullableNonBatchWithArg(ctx, field)
+			case "directiveNonNullableBatch":
+				return ec.fieldContext_User_directiveNonNullableBatch(ctx, field)
+			case "directiveNonNullableNonBatch":
+				return ec.fieldContext_User_directiveNonNullableNonBatch(ctx, field)
+			case "profileBatch":
+				return ec.fieldContext_User_profileBatch(ctx, field)
+			case "profileNonBatch":
+				return ec.fieldContext_User_profileNonBatch(ctx, field)
+			case "profileConnectionBatch":
+				return ec.fieldContext_User_profileConnectionBatch(ctx, field)
+			case "profileConnectionNonBatch":
+				return ec.fieldContext_User_profileConnectionNonBatch(ctx, field)
+			case "childUserBatch":
+				return ec.fieldContext_User_childUserBatch(ctx, field)
+			case "childUserNonBatch":
+				return ec.fieldContext_User_childUserNonBatch(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type User", field.Name)
 		},
 	}
 	return fc, nil
@@ -4274,6 +4471,72 @@ func (ec *executionContext) _User(ctx context.Context, sel ast.SelectionSet, obj
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "childUserBatch":
+			field := field
+
+			innerFunc := func(ctx context.Context, _ *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._User_childUserBatch(ctx, field, obj)
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "childUserNonBatch":
+			field := field
+
+			innerFunc := func(ctx context.Context, _ *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._User_childUserNonBatch(ctx, field, obj)
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -4975,6 +5238,13 @@ func (ec *executionContext) marshalOString2ᚖstring(ctx context.Context, sel as
 	_ = ctx
 	res := graphql.MarshalString(*v)
 	return res
+}
+
+func (ec *executionContext) marshalOUser2ᚖgithubᚗcomᚋ99designsᚋgqlgenᚋ_examplesᚋbatchresolverᚐUser(ctx context.Context, sel ast.SelectionSet, v *User) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._User(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalO__EnumValue2ᚕgithubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐEnumValueᚄ(ctx context.Context, sel ast.SelectionSet, v []introspection.EnumValue) graphql.Marshaler {

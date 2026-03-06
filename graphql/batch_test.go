@@ -3,6 +3,8 @@ package graphql
 import (
 	"context"
 	"errors"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -138,4 +140,128 @@ func TestResolveBatchSingleResult_ErrorLenMismatch(t *testing.T) {
 			"parents (index 0)",
 		errs[0].Message,
 	)
+}
+
+func TestNewBatchParentGroup_BuildsIndexMap(t *testing.T) {
+	type Profile struct{ ID string }
+	p1 := &Profile{ID: "p1"}
+	p2 := &Profile{ID: "p2"}
+	p3 := &Profile{ID: "p3"}
+
+	group := NewBatchParentGroup([]*Profile{p1, p2, p3})
+
+	require.Equal(t, []*Profile{p1, p2, p3}, group.Parents)
+
+	idx, ok := group.IndexOf(p1)
+	require.True(t, ok)
+	require.Equal(t, 0, idx)
+
+	idx, ok = group.IndexOf(p2)
+	require.True(t, ok)
+	require.Equal(t, 1, idx)
+
+	idx, ok = group.IndexOf(p3)
+	require.True(t, ok)
+	require.Equal(t, 2, idx)
+}
+
+func TestNewBatchParentGroup_IndexOf_NotFound(t *testing.T) {
+	type Profile struct{ ID string }
+	p1 := &Profile{ID: "p1"}
+	unknown := &Profile{ID: "unknown"}
+
+	group := NewBatchParentGroup([]*Profile{p1})
+
+	_, ok := group.IndexOf(unknown)
+	require.False(t, ok)
+}
+
+func TestBatchParentGroup_IndexOf_NilGroup(t *testing.T) {
+	var group *BatchParentGroup
+	_, ok := group.IndexOf("anything")
+	require.False(t, ok)
+}
+
+func TestBatchParentGroup_IndexOf_NoIndexMap(t *testing.T) {
+	group := &BatchParentGroup{Parents: []string{"a", "b"}}
+	_, ok := group.IndexOf("a")
+	require.False(t, ok)
+}
+
+func TestGetFieldResult_RecoversPanic(t *testing.T) {
+	group := &BatchParentGroup{Parents: []string{"a", "b", "c"}}
+
+	const n = 10
+	results := make([]*BatchFieldResult, n)
+	var wg sync.WaitGroup
+
+	for i := range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			results[i] = group.GetFieldResult("panicking", func() (any, error) {
+				panic("resolver blew up")
+			})
+		}()
+	}
+	wg.Wait()
+
+	for i := range n {
+		require.NotNil(t, results[i], "goroutine %d should get a result", i)
+		require.Nil(t, results[i].Results, "Results should be nil after panic")
+		require.Error(t, results[i].Err)
+		require.Contains(t, results[i].Err.Error(), "panic in batch resolver")
+		require.Contains(t, results[i].Err.Error(), "resolver blew up")
+	}
+}
+
+func TestNewBatchParentGroup_DeduplicatesDuplicatePointers(t *testing.T) {
+	type Profile struct{ ID string }
+	p1 := &Profile{ID: "p1"}
+	p2 := &Profile{ID: "p2"}
+
+	// p1 appears at positions 0 and 2 in the input (e.g. from a dataloader cache).
+	// The deduplicated Parents should be [p1, p2] and IndexOf should return
+	// indices into that deduplicated slice.
+	group := NewBatchParentGroup([]*Profile{p1, p2, p1})
+
+	parents := group.Parents.([]*Profile)
+	require.Len(t, parents, 2, "duplicates should be removed")
+	require.Same(t, p1, parents[0])
+	require.Same(t, p2, parents[1])
+
+	idx, ok := group.IndexOf(p1)
+	require.True(t, ok)
+	require.Equal(t, 0, idx)
+
+	idx, ok = group.IndexOf(p2)
+	require.True(t, ok)
+	require.Equal(t, 1, idx)
+}
+
+func TestGetFieldResult_DeduplicatesAcrossGoroutines(t *testing.T) {
+	group := &BatchParentGroup{Parents: []string{"a", "b", "c"}}
+
+	const n = 20
+	var callCount atomic.Int32
+	results := make([]*BatchFieldResult, n)
+	var wg sync.WaitGroup
+
+	for i := range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			results[i] = group.GetFieldResult("cover", func() (any, error) {
+				callCount.Add(1)
+				return []string{"img-a", "img-b", "img-c"}, nil
+			})
+		}()
+	}
+	wg.Wait()
+
+	require.Equal(t, int32(1), callCount.Load(), "resolve should execute exactly once")
+	for i := 1; i < n; i++ {
+		require.Same(t, results[0], results[i], "all goroutines should get the same result")
+	}
+	require.Equal(t, []string{"img-a", "img-b", "img-c"}, results[0].Results)
 }

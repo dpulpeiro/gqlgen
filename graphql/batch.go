@@ -58,10 +58,67 @@ type BatchFieldResult struct {
 	done    chan struct{}
 	Results any
 	Err     error
+
+	// Shared child batch parent group: all goroutines processing results from
+	// the same batch call share this group so that GetFieldResult deduplication
+	// works correctly for descendant batch resolvers.
+	childGroup     *BatchParentGroup
+	childGroupOnce sync.Once
+
+	// Shared nested groups: lazily computed once from the batch results.
+	// Used for propagating batch groups through intermediate types.
+	nestedGroups     map[string]*BatchParentGroup
+	nestedGroupsOnce sync.Once
 }
 
+// GetChildGroup returns a shared BatchParentGroup for the child type, creating
+// one if needed. All goroutines processing results from the same batch call
+// share this group so that descendant batch resolvers can deduplicate via
+// GetFieldResult's sync.Once.
+func (r *BatchFieldResult) GetChildGroup() *BatchParentGroup {
+	r.childGroupOnce.Do(func() {
+		r.childGroup = &BatchParentGroup{Parents: r.Results}
+	})
+	return r.childGroup
+}
+
+// GetNestedGroups returns the shared nested groups map, computing it once
+// using the provided function. All goroutines processing results from the
+// same batch call share these groups so that descendant batch resolvers
+// through intermediate types can deduplicate correctly.
+func (r *BatchFieldResult) GetNestedGroups(compute func() map[string]*BatchParentGroup) map[string]*BatchParentGroup {
+	r.nestedGroupsOnce.Do(func() {
+		r.nestedGroups = compute()
+	})
+	return r.nestedGroups
+}
+
+// BatchChildInfo holds batch propagation metadata for nested batch resolvers.
+// The generated resolveBatch_* template writes this to FieldContext.BatchChild,
+// and resolveField reads it to enrich the context for child resolvers.
+type BatchChildInfo struct {
+	Group        *BatchParentGroup            // shared across all goroutines from the same batch
+	Type         string                       // child type name (e.g. "Profile")
+	Index        int                          // index of this result in the batch
+	NestedGroups map[string]*BatchParentGroup // groups for types reachable through intermediate fields
+}
+
+type batchResultIndexKey struct{}
+
 // WithBatchParents adds a batch parent group to the context.
+// It also clears any stale batchResultIndex from a parent scope: list fields
+// provide a PathIndex in the path so the fallback index is not needed and
+// would interfere with IndexOf-based lookups for nested groups propagated
+// through intermediate types (e.g. connection → edges → node).
 func WithBatchParents(ctx context.Context, typeName string, parents any) context.Context {
+	ctx = context.WithValue(ctx, batchResultIndexKey{}, nil)
+	return withBatchParentGroup(ctx, typeName, &BatchParentGroup{Parents: parents})
+}
+
+// withBatchParentGroup adds an existing BatchParentGroup to the context.
+// This is used for nested batch propagation where all goroutines must share
+// the same group instance for GetFieldResult deduplication to work.
+func withBatchParentGroup(ctx context.Context, typeName string, group *BatchParentGroup) context.Context {
 	prev, _ := ctx.Value(batchContextKey{}).(*BatchParentState)
 	var groups map[string]*BatchParentGroup
 	if prev != nil {
@@ -70,9 +127,17 @@ func WithBatchParents(ctx context.Context, typeName string, parents any) context
 	} else {
 		groups = make(map[string]*BatchParentGroup, 1)
 	}
-	groups[typeName] = &BatchParentGroup{Parents: parents}
+	groups[typeName] = group
 
 	return context.WithValue(ctx, batchContextKey{}, &BatchParentState{groups: groups})
+}
+
+// withBatchResultIndex stores the batch result index in context for nested
+// batch propagation. This is used when batch results (not list fields) set
+// batch parent context — the path won't contain a PathIndex, so
+// BatchParentIndex falls back to this value.
+func withBatchResultIndex(ctx context.Context, idx int) context.Context {
+	return context.WithValue(ctx, batchResultIndexKey{}, idx)
 }
 
 // GetBatchParentGroup retrieves the batch parent group for a given type name from context.
@@ -103,13 +168,18 @@ func (g *BatchParentGroup) GetFieldResult(
 }
 
 // BatchParentIndex returns the index of the current parent in the batch from the path.
+// It first checks for a PathIndex in the path (set by list fields), then falls
+// back to the batchResultIndex stored in context (set by nested batch propagation
+// when the path doesn't contain a PathIndex).
 func BatchParentIndex(ctx context.Context) (ast.PathIndex, bool) {
 	path := GetPath(ctx)
-	if len(path) < 2 {
-		return 0, false
+	if len(path) >= 2 {
+		if idx, ok := path[len(path)-2].(ast.PathIndex); ok {
+			return idx, true
+		}
 	}
-	if idx, ok := path[len(path)-2].(ast.PathIndex); ok {
-		return idx, true
+	if v, ok := ctx.Value(batchResultIndexKey{}).(int); ok {
+		return ast.PathIndex(v), true
 	}
 	return 0, false
 }

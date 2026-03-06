@@ -3,6 +3,7 @@ package graphql
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -138,4 +139,153 @@ func TestResolveBatchSingleResult_ErrorLenMismatch(t *testing.T) {
 			"parents (index 0)",
 		errs[0].Message,
 	)
+}
+
+func TestGetFieldResult_DeduplicatesAcrossGoroutines(t *testing.T) {
+	group := &BatchParentGroup{Parents: []string{"a", "b"}}
+
+	var calls int32
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	wg.Add(10)
+	for i := 0; i < 10; i++ {
+		go func() {
+			defer wg.Done()
+			group.GetFieldResult("name", func() (any, error) {
+				mu.Lock()
+				calls++
+				mu.Unlock()
+				return []string{"A", "B"}, nil
+			})
+		}()
+	}
+	wg.Wait()
+	require.Equal(t, int32(1), calls)
+}
+
+func TestGetChildGroup_SharedAcrossGoroutines(t *testing.T) {
+	result := &BatchFieldResult{
+		Results: []string{"x", "y"},
+	}
+
+	var groups [10]*BatchParentGroup
+	var wg sync.WaitGroup
+	wg.Add(10)
+	for i := 0; i < 10; i++ {
+		i := i
+		go func() {
+			defer wg.Done()
+			groups[i] = result.GetChildGroup()
+		}()
+	}
+	wg.Wait()
+
+	// All goroutines should get the same group instance.
+	for i := 1; i < 10; i++ {
+		require.Same(t, groups[0], groups[i])
+	}
+	// The group's Parents should be the batch results.
+	require.Equal(t, []string{"x", "y"}, groups[0].Parents)
+}
+
+func TestGetNestedGroups_ComputedOnce(t *testing.T) {
+	result := &BatchFieldResult{
+		Results: []string{"x", "y"},
+	}
+
+	var calls int32
+	var mu sync.Mutex
+	compute := func() map[string]*BatchParentGroup {
+		mu.Lock()
+		calls++
+		mu.Unlock()
+		return map[string]*BatchParentGroup{
+			"Child": {Parents: []string{"c1", "c2"}},
+		}
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(5)
+	for i := 0; i < 5; i++ {
+		go func() {
+			defer wg.Done()
+			result.GetNestedGroups(compute)
+		}()
+	}
+	wg.Wait()
+
+	require.Equal(t, int32(1), calls)
+	groups := result.GetNestedGroups(compute)
+	require.Contains(t, groups, "Child")
+	require.Equal(t, []string{"c1", "c2"}, groups["Child"].Parents)
+}
+
+func TestBatchParentIndex_PathFallback(t *testing.T) {
+	// Path with PathIndex — should use path.
+	ctx := WithResponseContext(context.Background(), DefaultErrorPresenter, nil)
+	ctx = WithPathContext(ctx, NewPathWithField("users"))
+	ctx = WithPathContext(ctx, NewPathWithIndex(3))
+	ctx = WithPathContext(ctx, NewPathWithField("name"))
+
+	idx, ok := BatchParentIndex(ctx)
+	require.True(t, ok)
+	require.Equal(t, ast.PathIndex(3), idx)
+}
+
+func TestBatchParentIndex_ContextFallback(t *testing.T) {
+	// Path without PathIndex — should fall back to batchResultIndex.
+	ctx := WithResponseContext(context.Background(), DefaultErrorPresenter, nil)
+	ctx = WithPathContext(ctx, NewPathWithField("users"))
+	ctx = WithPathContext(ctx, NewPathWithField("profile"))
+	ctx = withBatchResultIndex(ctx, 7)
+
+	idx, ok := BatchParentIndex(ctx)
+	require.True(t, ok)
+	require.Equal(t, ast.PathIndex(7), idx)
+}
+
+func TestBatchParentIndex_NeitherAvailable(t *testing.T) {
+	ctx := WithResponseContext(context.Background(), DefaultErrorPresenter, nil)
+	ctx = WithPathContext(ctx, NewPathWithField("users"))
+	ctx = WithPathContext(ctx, NewPathWithField("profile"))
+
+	_, ok := BatchParentIndex(ctx)
+	require.False(t, ok)
+}
+
+func TestWithBatchParents_ClearsStaleIndex(t *testing.T) {
+	ctx := WithResponseContext(context.Background(), DefaultErrorPresenter, nil)
+	ctx = WithPathContext(ctx, NewPathWithField("users"))
+	ctx = WithPathContext(ctx, NewPathWithField("profile"))
+	ctx = withBatchResultIndex(ctx, 5)
+
+	// WithBatchParents should clear the stale index.
+	ctx = WithBatchParents(ctx, "User", []string{"a", "b"})
+
+	// The batchResultIndex should be nil now, so BatchParentIndex
+	// should only find an index from the path (which doesn't have one).
+	_, ok := BatchParentIndex(ctx)
+	require.False(t, ok)
+}
+
+func TestWithBatchParentGroup_SharesGroupInstance(t *testing.T) {
+	ctx := context.Background()
+	group := &BatchParentGroup{Parents: []string{"a", "b"}}
+
+	ctx = withBatchParentGroup(ctx, "User", group)
+
+	got := GetBatchParentGroup(ctx, "User")
+	require.Same(t, group, got)
+}
+
+func TestWithBatchParentGroup_PreservesPreviousGroups(t *testing.T) {
+	ctx := context.Background()
+	group1 := &BatchParentGroup{Parents: []string{"a"}}
+	group2 := &BatchParentGroup{Parents: []string{"b"}}
+
+	ctx = withBatchParentGroup(ctx, "User", group1)
+	ctx = withBatchParentGroup(ctx, "Profile", group2)
+
+	require.Same(t, group1, GetBatchParentGroup(ctx, "User"))
+	require.Same(t, group2, GetBatchParentGroup(ctx, "Profile"))
 }

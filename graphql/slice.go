@@ -35,7 +35,7 @@ func MarshalSliceConcurrently(
 		fc := &FieldContext{
 			Index: &i,
 		}
-		childCtx := withBatchResultIndex(WithFieldContext(ctx, fc), i)
+		childCtx := WithFieldContext(ctx, fc)
 		if omitPanicHandler {
 			ret[0] = marshalElement(childCtx, 0)
 		} else {
@@ -67,7 +67,7 @@ func MarshalSliceConcurrently(
 		fc := &FieldContext{
 			Index: &i,
 		}
-		childCtx := withBatchResultIndex(WithFieldContext(ctx, fc), i)
+		childCtx := WithFieldContext(ctx, fc)
 
 		f := func(i int) {
 			defer wg.Done()

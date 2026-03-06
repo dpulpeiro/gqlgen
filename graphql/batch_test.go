@@ -206,8 +206,8 @@ func TestGetGroups_ComputedOnceAndShared(t *testing.T) {
 	require.Equal(t, []string{"c1", "c2"}, groups["Child"].Parents)
 }
 
-func TestBatchParentIndex_PathFallback(t *testing.T) {
-	// Path with PathIndex — should use path.
+func TestBatchParentIndex_FindsLastPathIndex(t *testing.T) {
+	// Direct list: users.3.name → finds 3
 	ctx := WithResponseContext(context.Background(), DefaultErrorPresenter, nil)
 	ctx = WithPathContext(ctx, NewPathWithField("users"))
 	ctx = WithPathContext(ctx, NewPathWithIndex(3))
@@ -218,38 +218,24 @@ func TestBatchParentIndex_PathFallback(t *testing.T) {
 	require.Equal(t, ast.PathIndex(3), idx)
 }
 
-func TestBatchParentIndex_ContextFallback(t *testing.T) {
-	// Path without PathIndex — should fall back to batchResultIndex.
+func TestBatchParentIndex_ThroughIntermediateFields(t *testing.T) {
+	// Connection: edges.2.node.profile → finds 2
 	ctx := WithResponseContext(context.Background(), DefaultErrorPresenter, nil)
-	ctx = WithPathContext(ctx, NewPathWithField("users"))
+	ctx = WithPathContext(ctx, NewPathWithField("edges"))
+	ctx = WithPathContext(ctx, NewPathWithIndex(2))
+	ctx = WithPathContext(ctx, NewPathWithField("node"))
 	ctx = WithPathContext(ctx, NewPathWithField("profile"))
-	ctx = withBatchResultIndex(ctx, 7)
 
 	idx, ok := BatchParentIndex(ctx)
 	require.True(t, ok)
-	require.Equal(t, ast.PathIndex(7), idx)
+	require.Equal(t, ast.PathIndex(2), idx)
 }
 
-func TestBatchParentIndex_NeitherAvailable(t *testing.T) {
+func TestBatchParentIndex_NoPathIndex(t *testing.T) {
 	ctx := WithResponseContext(context.Background(), DefaultErrorPresenter, nil)
-	ctx = WithPathContext(ctx, NewPathWithField("users"))
+	ctx = WithPathContext(ctx, NewPathWithField("user"))
 	ctx = WithPathContext(ctx, NewPathWithField("profile"))
 
-	_, ok := BatchParentIndex(ctx)
-	require.False(t, ok)
-}
-
-func TestWithBatchParents_ClearsStaleIndex(t *testing.T) {
-	ctx := WithResponseContext(context.Background(), DefaultErrorPresenter, nil)
-	ctx = WithPathContext(ctx, NewPathWithField("users"))
-	ctx = WithPathContext(ctx, NewPathWithField("profile"))
-	ctx = withBatchResultIndex(ctx, 5)
-
-	// WithBatchParents should clear the stale index.
-	ctx = WithBatchParents(ctx, "User", []string{"a", "b"})
-
-	// The batchResultIndex should be nil now, so BatchParentIndex
-	// should only find an index from the path (which doesn't have one).
 	_, ok := BatchParentIndex(ctx)
 	require.False(t, ok)
 }

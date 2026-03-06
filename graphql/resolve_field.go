@@ -136,7 +136,6 @@ func resolveField[T, R any](
 			for typeName, group := range fc.BatchChild.Groups {
 				ctx = withBatchParentGroup(ctx, typeName, group)
 			}
-			ctx = withBatchResultIndex(ctx, fc.BatchChild.Index)
 		}
 		return result(ctx, res)
 	}

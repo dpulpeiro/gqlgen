@@ -83,18 +83,10 @@ func (r *BatchFieldResult) GetGroups(compute func() map[string]*BatchParentGroup
 // and resolveField reads it to enrich the context for child resolvers.
 type BatchChildInfo struct {
 	Groups map[string]*BatchParentGroup // batch parent groups to propagate (child type + intermediate types)
-	Index  int                          // index of this result in the batch
 }
 
-type batchResultIndexKey struct{}
-
 // WithBatchParents adds a batch parent group to the context.
-// It also clears any stale batchResultIndex from a parent scope: list fields
-// provide a PathIndex in the path so the fallback index is not needed and
-// would interfere with IndexOf-based lookups for nested groups propagated
-// through intermediate types (e.g. connection → edges → node).
 func WithBatchParents(ctx context.Context, typeName string, parents any) context.Context {
-	ctx = context.WithValue(ctx, batchResultIndexKey{}, nil)
 	return withBatchParentGroup(ctx, typeName, &BatchParentGroup{Parents: parents})
 }
 
@@ -113,14 +105,6 @@ func withBatchParentGroup(ctx context.Context, typeName string, group *BatchPare
 	groups[typeName] = group
 
 	return context.WithValue(ctx, batchContextKey{}, &BatchParentState{groups: groups})
-}
-
-// withBatchResultIndex stores the batch result index in context for nested
-// batch propagation. This is used when batch results (not list fields) set
-// batch parent context — the path won't contain a PathIndex, so
-// BatchParentIndex falls back to this value.
-func withBatchResultIndex(ctx context.Context, idx int) context.Context {
-	return context.WithValue(ctx, batchResultIndexKey{}, idx)
 }
 
 // GetBatchParentGroup retrieves the batch parent group for a given type name from context.
@@ -150,19 +134,17 @@ func (g *BatchParentGroup) GetFieldResult(
 	return result
 }
 
-// BatchParentIndex returns the index of the current parent in the batch from the path.
-// It first checks for a PathIndex in the path (set by list fields), then falls
-// back to the batchResultIndex stored in context (set by nested batch propagation
-// when the path doesn't contain a PathIndex).
+// BatchParentIndex returns the index of the current parent in the batch by
+// scanning the path backwards for the last PathIndex. This works for both
+// list fields (where MarshalSliceConcurrently sets the index) and nested
+// batch through intermediate fields (where the ancestor list's index
+// corresponds to the batch position due to 1:1 order preservation).
 func BatchParentIndex(ctx context.Context) (ast.PathIndex, bool) {
 	path := GetPath(ctx)
-	if len(path) >= 2 {
-		if idx, ok := path[len(path)-2].(ast.PathIndex); ok {
+	for i := len(path) - 1; i >= 0; i-- {
+		if idx, ok := path[i].(ast.PathIndex); ok {
 			return idx, true
 		}
-	}
-	if v, ok := ctx.Value(batchResultIndexKey{}).(int); ok {
-		return ast.PathIndex(v), true
 	}
 	return 0, false
 }

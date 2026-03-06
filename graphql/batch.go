@@ -150,17 +150,10 @@ func (g *BatchParentGroup) GetFieldResult(
 	return result
 }
 
-// BatchParentIndex returns the index of the current parent in the batch from the path.
-// It first checks for a PathIndex in the path (set by list fields), then falls
-// back to the batchResultIndex stored in context (set by nested batch propagation
-// when the path doesn't contain a PathIndex).
+// BatchParentIndex returns the index of the current parent in the batch.
+// The index is stored in context by MarshalSliceConcurrently (for list fields)
+// or by resolveField's batch propagation (for nested batch through non-list fields).
 func BatchParentIndex(ctx context.Context) (ast.PathIndex, bool) {
-	path := GetPath(ctx)
-	if len(path) >= 2 {
-		if idx, ok := path[len(path)-2].(ast.PathIndex); ok {
-			return idx, true
-		}
-	}
 	if v, ok := ctx.Value(batchResultIndexKey{}).(int); ok {
 		return ast.PathIndex(v), true
 	}

@@ -206,36 +206,16 @@ func TestGetGroups_ComputedOnceAndShared(t *testing.T) {
 	require.Equal(t, []string{"c1", "c2"}, groups["Child"].Parents)
 }
 
-func TestBatchParentIndex_PathFallback(t *testing.T) {
-	// Path with PathIndex — should use path.
-	ctx := WithResponseContext(context.Background(), DefaultErrorPresenter, nil)
-	ctx = WithPathContext(ctx, NewPathWithField("users"))
-	ctx = WithPathContext(ctx, NewPathWithIndex(3))
-	ctx = WithPathContext(ctx, NewPathWithField("name"))
-
-	idx, ok := BatchParentIndex(ctx)
-	require.True(t, ok)
-	require.Equal(t, ast.PathIndex(3), idx)
-}
-
-func TestBatchParentIndex_ContextFallback(t *testing.T) {
-	// Path without PathIndex — should fall back to batchResultIndex.
-	ctx := WithResponseContext(context.Background(), DefaultErrorPresenter, nil)
-	ctx = WithPathContext(ctx, NewPathWithField("users"))
-	ctx = WithPathContext(ctx, NewPathWithField("profile"))
-	ctx = withBatchResultIndex(ctx, 7)
+func TestBatchParentIndex_FromContext(t *testing.T) {
+	ctx := withBatchResultIndex(context.Background(), 7)
 
 	idx, ok := BatchParentIndex(ctx)
 	require.True(t, ok)
 	require.Equal(t, ast.PathIndex(7), idx)
 }
 
-func TestBatchParentIndex_NeitherAvailable(t *testing.T) {
-	ctx := WithResponseContext(context.Background(), DefaultErrorPresenter, nil)
-	ctx = WithPathContext(ctx, NewPathWithField("users"))
-	ctx = WithPathContext(ctx, NewPathWithField("profile"))
-
-	_, ok := BatchParentIndex(ctx)
+func TestBatchParentIndex_NotAvailable(t *testing.T) {
+	_, ok := BatchParentIndex(context.Background())
 	require.False(t, ok)
 }
 

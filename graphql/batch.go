@@ -97,10 +97,8 @@ func (r *BatchFieldResult) GetNestedGroups(compute func() map[string]*BatchParen
 // The generated resolveBatch_* template writes this to FieldContext.BatchChild,
 // and resolveField reads it to enrich the context for child resolvers.
 type BatchChildInfo struct {
-	Group        *BatchParentGroup            // shared across all goroutines from the same batch
-	Type         string                       // child type name (e.g. "Profile")
-	Index        int                          // index of this result in the batch
-	NestedGroups map[string]*BatchParentGroup // groups for types reachable through intermediate fields
+	Groups map[string]*BatchParentGroup // batch parent groups to propagate (child type + intermediate types)
+	Index  int                          // index of this result in the batch
 }
 
 type batchResultIndexKey struct{}

@@ -133,13 +133,10 @@ func resolveField[T, R any](
 		// returning; we read it here to enrich the context so child batch
 		// resolvers can deduplicate their calls.
 		if fc.BatchChild != nil {
-			if fc.BatchChild.Type != "" && fc.BatchChild.Group != nil {
-				ctx = withBatchParentGroup(ctx, fc.BatchChild.Type, fc.BatchChild.Group)
-				ctx = withBatchResultIndex(ctx, fc.BatchChild.Index)
-			}
-			for typeName, group := range fc.BatchChild.NestedGroups {
+			for typeName, group := range fc.BatchChild.Groups {
 				ctx = withBatchParentGroup(ctx, typeName, group)
 			}
+			ctx = withBatchResultIndex(ctx, fc.BatchChild.Index)
 		}
 		return result(ctx, res)
 	}

@@ -163,32 +163,7 @@ func TestGetFieldResult_DeduplicatesAcrossGoroutines(t *testing.T) {
 	require.Equal(t, int32(1), calls)
 }
 
-func TestGetChildGroup_SharedAcrossGoroutines(t *testing.T) {
-	result := &BatchFieldResult{
-		Results: []string{"x", "y"},
-	}
-
-	var groups [10]*BatchParentGroup
-	var wg sync.WaitGroup
-	wg.Add(10)
-	for i := 0; i < 10; i++ {
-		i := i
-		go func() {
-			defer wg.Done()
-			groups[i] = result.GetChildGroup()
-		}()
-	}
-	wg.Wait()
-
-	// All goroutines should get the same group instance.
-	for i := 1; i < 10; i++ {
-		require.Same(t, groups[0], groups[i])
-	}
-	// The group's Parents should be the batch results.
-	require.Equal(t, []string{"x", "y"}, groups[0].Parents)
-}
-
-func TestGetNestedGroups_ComputedOnce(t *testing.T) {
+func TestGetGroups_ComputedOnceAndShared(t *testing.T) {
 	result := &BatchFieldResult{
 		Results: []string{"x", "y"},
 	}
@@ -200,23 +175,34 @@ func TestGetNestedGroups_ComputedOnce(t *testing.T) {
 		calls++
 		mu.Unlock()
 		return map[string]*BatchParentGroup{
-			"Child": {Parents: []string{"c1", "c2"}},
+			"Profile": {Parents: []string{"x", "y"}},
+			"Child":   {Parents: []string{"c1", "c2"}},
 		}
 	}
 
+	var allGroups [10]map[string]*BatchParentGroup
 	var wg sync.WaitGroup
-	wg.Add(5)
-	for i := 0; i < 5; i++ {
+	wg.Add(10)
+	for i := 0; i < 10; i++ {
+		i := i
 		go func() {
 			defer wg.Done()
-			result.GetNestedGroups(compute)
+			allGroups[i] = result.GetGroups(compute)
 		}()
 	}
 	wg.Wait()
 
+	// Compute should be called exactly once.
 	require.Equal(t, int32(1), calls)
-	groups := result.GetNestedGroups(compute)
-	require.Contains(t, groups, "Child")
+
+	// All goroutines should get the same map instance.
+	for i := 1; i < 10; i++ {
+		require.Same(t, allGroups[0]["Profile"], allGroups[i]["Profile"])
+		require.Same(t, allGroups[0]["Child"], allGroups[i]["Child"])
+	}
+
+	groups := result.GetGroups(compute)
+	require.Equal(t, []string{"x", "y"}, groups["Profile"].Parents)
 	require.Equal(t, []string{"c1", "c2"}, groups["Child"].Parents)
 }
 

@@ -59,38 +59,23 @@ type BatchFieldResult struct {
 	Results any
 	Err     error
 
-	// Shared child batch parent group: all goroutines processing results from
-	// the same batch call share this group so that GetFieldResult deduplication
-	// works correctly for descendant batch resolvers.
-	childGroup     *BatchParentGroup
-	childGroupOnce sync.Once
-
-	// Shared nested groups: lazily computed once from the batch results.
-	// Used for propagating batch groups through intermediate types.
-	nestedGroups     map[string]*BatchParentGroup
-	nestedGroupsOnce sync.Once
+	// Shared batch parent groups for descendant batch resolvers, lazily
+	// computed once. All goroutines processing results from the same batch
+	// call share these groups so that GetFieldResult deduplication works
+	// correctly for child and intermediate types.
+	groups     map[string]*BatchParentGroup
+	groupsOnce sync.Once
 }
 
-// GetChildGroup returns a shared BatchParentGroup for the child type, creating
-// one if needed. All goroutines processing results from the same batch call
-// share this group so that descendant batch resolvers can deduplicate via
-// GetFieldResult's sync.Once.
-func (r *BatchFieldResult) GetChildGroup() *BatchParentGroup {
-	r.childGroupOnce.Do(func() {
-		r.childGroup = &BatchParentGroup{Parents: r.Results}
-	})
-	return r.childGroup
-}
-
-// GetNestedGroups returns the shared nested groups map, computing it once
+// GetGroups returns the shared batch parent groups map, computing it once
 // using the provided function. All goroutines processing results from the
 // same batch call share these groups so that descendant batch resolvers
-// through intermediate types can deduplicate correctly.
-func (r *BatchFieldResult) GetNestedGroups(compute func() map[string]*BatchParentGroup) map[string]*BatchParentGroup {
-	r.nestedGroupsOnce.Do(func() {
-		r.nestedGroups = compute()
+// can deduplicate via GetFieldResult's sync.Once.
+func (r *BatchFieldResult) GetGroups(compute func() map[string]*BatchParentGroup) map[string]*BatchParentGroup {
+	r.groupsOnce.Do(func() {
+		r.groups = compute()
 	})
-	return r.nestedGroups
+	return r.groups
 }
 
 // BatchChildInfo holds batch propagation metadata for nested batch resolvers.

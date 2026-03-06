@@ -149,24 +149,74 @@ func (ec *executionContext) resolveBatch_{{$object.Name}}_{{$field.Name}}(ctx co
 		parents, ok := group.Parents.([]{{$object.Reference | ref}})
 		if ok {
 			idx, ok := graphql.BatchParentIndex(ctx)
-			if ok {
+			if !ok {
+				idx2, found := group.IndexOf(obj)
+				if found {
+					idx = ast.PathIndex(idx2)
+					ok = true
+				}
+			}
+			if ok && int(idx) >= 0 && int(idx) < len(parents) && parents[int(idx)] == obj {
 				key := field.Alias
 				if key == "" {
 					key = field.Name
 				}
-				{{/* TODO: resolveBatch_* runs per parent even when grouped; consider a single
-				dispatch per field if the execution flow can support it. */ -}}
 				result := group.GetFieldResult(key, func() (any, error) {
 					return resolver.{{ $field.GoFieldName }}({{ $field.BatchCallArgs "parents" }})
 				})
+				{{- $nestedPaths := $field.NestedBatchPaths $.Schema $.Config.Models $.AllObjects }}
+				{{- if $nestedPaths }}
+				nestedGroups := result.GetNestedGroups(func() map[string]*graphql.BatchParentGroup {
+					results, ok := result.Results.([]{{ $field.TypeReference.GO | ref }})
+					if !ok {
+						return nil
+					}
+					groups := make(map[string]*graphql.BatchParentGroup)
+					{{- range $path := $nestedPaths }}
+					{
+						var extracted []{{ $path.TargetGoType | ref }}
+						for _, v0 := range results {
+							if v0 == nil { continue }
+							{{- range $i, $step := $path.Steps }}
+							{{- if $step.IsTypeAssert }}
+							if v{{ add $i 1 }}, ok := v{{ $i }}.({{ $step.AssertGoType | ref }}); ok {
+							{{- else if $step.IsList }}
+							for _, v{{ add $i 1 }} := range v{{ $i }}.{{ $step.GoFieldName }} {
+								if v{{ add $i 1 }} == nil { continue }
+							{{- else }}
+							v{{ add $i 1 }} := v{{ $i }}.{{ $step.GoFieldName }}
+							if v{{ add $i 1 }} != nil {
+							{{- end }}
+							{{- end }}
+							extracted = append(extracted, v{{ len $path.Steps }})
+							{{- range $path.Steps }}
+							}
+							{{- end }}
+						}
+						if len(extracted) > 0 {
+							groups[{{ $path.TargetTypeName | quote }}] = graphql.NewBatchParentGroup(extracted)
+						}
+					}
+					{{- end }}
+					return groups
+				})
+				{{- end }}
 				return graphql.ResolveBatchGroupResult[{{ $field.TypeReference.GO | ref }}](
 					ctx,
 					idx,
 					len(parents),
 					result,
 					{{ printf "%s.%s" $object.Name $field.Name | quote }},
+					{{- if eq $field.TypeReference.Definition.Kind "OBJECT" }}
+					{{ $field.TypeReference.Definition.Name | quote }},
+					{{- else }}
 					"",
+					{{- end }}
+					{{- if $nestedPaths }}
+					nestedGroups,
+					{{- else }}
 					nil,
+					{{- end }}
 				)
 			}
 		}

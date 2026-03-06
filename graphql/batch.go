@@ -48,8 +48,34 @@ type BatchParentState struct {
 
 // BatchParentGroup represents a group of parent objects being resolved together.
 type BatchParentGroup struct {
-	Parents any
-	fields  sync.Map
+	Parents  any
+	fields   sync.Map
+	indexMap map[any]int // pointer → index for IndexOf
+}
+
+// NewBatchParentGroup creates a BatchParentGroup with an index map for pointer-based
+// lookups. Duplicate pointers (e.g. from dataloader caches) are deduplicated: only
+// the first occurrence is kept and the index map points to the deduplicated slice.
+func NewBatchParentGroup[T any](parents []T) *BatchParentGroup {
+	m := make(map[any]int, len(parents))
+	deduped := make([]T, 0, len(parents))
+	for _, p := range parents {
+		if _, exists := m[any(p)]; !exists {
+			m[any(p)] = len(deduped)
+			deduped = append(deduped, p)
+		}
+	}
+	return &BatchParentGroup{Parents: deduped, indexMap: m}
+}
+
+// IndexOf returns the index of obj in the batch parent group using pointer identity.
+// Returns false if the group has no index map or obj is not found.
+func (g *BatchParentGroup) IndexOf(obj any) (int, bool) {
+	if g == nil || g.indexMap == nil {
+		return 0, false
+	}
+	idx, ok := g.indexMap[obj]
+	return idx, ok
 }
 
 // BatchFieldResult represents the cached result of a batch field resolution.

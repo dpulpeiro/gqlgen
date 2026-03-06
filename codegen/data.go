@@ -27,6 +27,9 @@ type Data struct {
 	// AllDirectives should rarely be used directly.
 	AllDirectives   DirectiveList
 	Objects         Objects
+	// AllObjects contains every Object across all schema files.
+	// In single-file mode, AllObjects equals Objects.
+	AllObjects      Objects
 	Inputs          Objects
 	Interfaces      map[string]*Interface
 	ReferencedTypes map[string]*config.TypeReference
@@ -197,6 +200,7 @@ func BuildData(cfg *config.Config, plugins ...any) (*Data, error) {
 	sort.Slice(s.Objects, func(i, j int) bool {
 		return s.Objects[i].Name < s.Objects[j].Name
 	})
+	s.AllObjects = s.Objects
 
 	sort.Slice(s.Inputs, func(i, j int) bool {
 		return s.Inputs[i].Name < s.Inputs[j].Name

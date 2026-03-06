@@ -469,3 +469,73 @@ func TestGetNestedGroups_ComputesOnce(t *testing.T) {
 			"all goroutines should share the same Profile group")
 	}
 }
+
+func TestNewBatchParentGroup_BuildsIndexMap(t *testing.T) {
+	type Profile struct{ ID string }
+	p1 := &Profile{ID: "p1"}
+	p2 := &Profile{ID: "p2"}
+	p3 := &Profile{ID: "p3"}
+
+	group := NewBatchParentGroup([]*Profile{p1, p2, p3})
+
+	require.Equal(t, []*Profile{p1, p2, p3}, group.Parents)
+
+	idx, ok := group.IndexOf(p1)
+	require.True(t, ok)
+	require.Equal(t, 0, idx)
+
+	idx, ok = group.IndexOf(p2)
+	require.True(t, ok)
+	require.Equal(t, 1, idx)
+
+	idx, ok = group.IndexOf(p3)
+	require.True(t, ok)
+	require.Equal(t, 2, idx)
+}
+
+func TestNewBatchParentGroup_IndexOf_NotFound(t *testing.T) {
+	type Profile struct{ ID string }
+	p1 := &Profile{ID: "p1"}
+	unknown := &Profile{ID: "unknown"}
+
+	group := NewBatchParentGroup([]*Profile{p1})
+
+	_, ok := group.IndexOf(unknown)
+	require.False(t, ok)
+}
+
+func TestBatchParentGroup_IndexOf_NilGroup(t *testing.T) {
+	var group *BatchParentGroup
+	_, ok := group.IndexOf("anything")
+	require.False(t, ok)
+}
+
+func TestBatchParentGroup_IndexOf_NoIndexMap(t *testing.T) {
+	group := &BatchParentGroup{Parents: []string{"a", "b"}}
+	_, ok := group.IndexOf("a")
+	require.False(t, ok)
+}
+
+func TestNewBatchParentGroup_DeduplicatesDuplicatePointers(t *testing.T) {
+	type Profile struct{ ID string }
+	p1 := &Profile{ID: "p1"}
+	p2 := &Profile{ID: "p2"}
+
+	// p1 appears at positions 0 and 2 in the input (e.g. from a dataloader cache).
+	// The deduplicated Parents should be [p1, p2] and IndexOf should return
+	// indices into that deduplicated slice.
+	group := NewBatchParentGroup([]*Profile{p1, p2, p1})
+
+	parents := group.Parents.([]*Profile)
+	require.Len(t, parents, 2, "duplicates should be removed")
+	require.Same(t, p1, parents[0])
+	require.Same(t, p2, parents[1])
+
+	idx, ok := group.IndexOf(p1)
+	require.True(t, ok)
+	require.Equal(t, 0, idx)
+
+	idx, ok = group.IndexOf(p2)
+	require.True(t, ok)
+	require.Equal(t, 1, idx)
+}

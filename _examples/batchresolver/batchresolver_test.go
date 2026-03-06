@@ -533,16 +533,14 @@ func TestBatchResolver_Nested_CallCount(t *testing.T) {
 		resolver.profileBatchCalls.Load(),
 		"profileBatch should be called once for all users",
 	)
-	// TODO: coverBatch is called once per profile (not batched) because profiles
-	// are resolved as individual values, not as a list. The batch parent context
-	// for "Profile" is only set when marshalling a [Profile] list field.
-	// Nested batching should propagate the batch parent context from batch
-	// resolver results so coverBatchCalls == 1 here.
+	// With nested batch propagation, coverBatch is called once for all
+	// profiles because the batch parent context is propagated from
+	// profileBatch results.
 	require.Equal(
 		t,
-		int32(n),
+		int32(1),
 		resolver.coverBatchCalls.Load(),
-		"coverBatch called once per profile (no list parent context)",
+		"coverBatch should be called once for all profiles (nested batch propagation)",
 	)
 
 	// --- Non-batch path ---
@@ -651,14 +649,13 @@ func TestBatchResolver_Nested_Connection_CallCount(t *testing.T) {
 		resolver.profileConnectionBatchCalls.Load(),
 		"profileConnectionBatch should be called once for all users",
 	)
-	// TODO: coverBatch is not batched because the immediate parent (Profile)
-	// and its edge are not batched — only the connection is. This should be 1
-	// once nested batching propagates through non-batched intermediate types.
+	// With nested batch propagation through connection → edges → node,
+	// coverBatch is called once for all profiles.
 	require.Equal(
 		t,
-		int32(n),
+		int32(1),
 		resolver.coverBatchCalls.Load(),
-		"coverBatch called once per profile (immediate parent not batched)",
+		"coverBatch should be called once for all profiles (nested batch propagation through connection)",
 	)
 
 	// --- Non-batch path ---

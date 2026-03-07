@@ -125,7 +125,6 @@ func addBuild(filename string, p *ast.Position, data *Data, builds *map[string]*
 		MutationRoot:     data.MutationRoot,
 		SubscriptionRoot: data.SubscriptionRoot,
 		AllDirectives:    data.AllDirectives,
-		AllObjects:       data.AllObjects,
 	}
 }
 

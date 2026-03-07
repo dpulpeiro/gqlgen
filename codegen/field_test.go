@@ -425,7 +425,7 @@ func TestField_NestedBatchPaths_NilGoType(t *testing.T) {
 	}
 
 	// Should not panic and should return no paths (Profile has no Go type).
-	paths := f.NestedBatchPaths(schema, models, objects)
+	paths := computeNestedBatchPaths(&f, schema, models, objects)
 	require.Empty(t, paths)
 }
 
@@ -500,7 +500,7 @@ func TestField_NestedBatchPaths_WithGoType(t *testing.T) {
 		},
 	}
 
-	paths := f.NestedBatchPaths(schema, models, objects)
+	paths := computeNestedBatchPaths(&f, schema, models, objects)
 	require.Len(t, paths, 1)
 	require.Equal(t, "Profile", paths[0].TargetTypeName)
 	require.Len(t, paths[0].Steps, 2)
@@ -512,10 +512,9 @@ func TestField_NestedBatchPaths_WithGoType(t *testing.T) {
 
 func TestField_NestedBatchPaths_CrossFile(t *testing.T) {
 	// In follow-schema layout, per-file Objects only contain types from that
-	// schema file. AllObjects contains every type across all files.
-	// This test verifies that NestedBatchPaths finds paths when the target
-	// batch type (Profile) is in AllObjects but would be absent from the
-	// per-file subset.
+	// schema file. Nested batch paths are precomputed in BuildData when all
+	// objects are available. This test verifies that paths are found when the
+	// target batch type (Profile) is only present in the full object set.
 	schema := gqlparser.MustLoadSchema(&ast2.Source{
 		Name: "test.graphql",
 		Input: `
@@ -575,7 +574,7 @@ func TestField_NestedBatchPaths_CrossFile(t *testing.T) {
 		},
 	}
 
-	// Simulate AllObjects — includes Profile from profile.graphql.
+	// Simulate full object set — includes Profile from profile.graphql.
 	allObjects := make(Objects, len(perFileObjects), len(perFileObjects)+1)
 	copy(allObjects, perFileObjects)
 	allObjects = append(allObjects, &Object{
@@ -590,11 +589,11 @@ func TestField_NestedBatchPaths_CrossFile(t *testing.T) {
 	}
 
 	// With only per-file objects (no Profile), path cannot be resolved.
-	paths := f.NestedBatchPaths(schema, models, perFileObjects)
+	paths := computeNestedBatchPaths(&f, schema, models, perFileObjects)
 	require.Empty(t, paths, "per-file objects should not find cross-file batch target")
 
-	// With AllObjects (includes Profile), the path is found.
-	paths = f.NestedBatchPaths(schema, models, allObjects)
+	// With full object set (includes Profile), the path is found.
+	paths = computeNestedBatchPaths(&f, schema, models, allObjects)
 	require.Len(t, paths, 1)
 	require.Equal(t, "Profile", paths[0].TargetTypeName)
 	require.Len(t, paths[0].Steps, 2)
@@ -677,7 +676,7 @@ func TestField_NestedBatchPaths_SkipsResolverFields(t *testing.T) {
 	}
 
 	// Path through Edge.node is skipped because node is a resolver.
-	paths := f.NestedBatchPaths(schema, models, objects)
+	paths := computeNestedBatchPaths(&f, schema, models, objects)
 	require.Empty(t, paths)
 }
 
@@ -737,7 +736,7 @@ func TestField_NestedBatchPaths_UnionAsStartingPoint(t *testing.T) {
 		},
 	}
 
-	paths := f.NestedBatchPaths(schema, models, objects)
+	paths := computeNestedBatchPaths(&f, schema, models, objects)
 	require.Len(t, paths, 1)
 	require.Equal(t, "Video", paths[0].TargetTypeName)
 	require.Len(t, paths[0].Steps, 1)
@@ -816,7 +815,7 @@ func TestField_NestedBatchPaths_UnionDuringTraversal(t *testing.T) {
 		},
 	}
 
-	paths := f.NestedBatchPaths(schema, models, objects)
+	paths := computeNestedBatchPaths(&f, schema, models, objects)
 	require.Len(t, paths, 1)
 	require.Equal(t, "Video", paths[0].TargetTypeName)
 	require.Len(t, paths[0].Steps, 2)
@@ -891,7 +890,7 @@ func TestField_NestedBatchPaths_UnionMemberWithoutBatchFields(t *testing.T) {
 		},
 	}
 
-	paths := f.NestedBatchPaths(schema, models, objects)
+	paths := computeNestedBatchPaths(&f, schema, models, objects)
 	require.Len(t, paths, 1)
 	require.Equal(t, "Profile", paths[0].TargetTypeName)
 	require.Len(t, paths[0].Steps, 2)
@@ -941,6 +940,6 @@ func TestField_NestedBatchPaths_UnionMemberNilGoType(t *testing.T) {
 	}
 
 	// Should not panic and should return no paths.
-	paths := f.NestedBatchPaths(schema, models, objects)
+	paths := computeNestedBatchPaths(&f, schema, models, objects)
 	require.Empty(t, paths)
 }

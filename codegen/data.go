@@ -27,9 +27,6 @@ type Data struct {
 	// AllDirectives should rarely be used directly.
 	AllDirectives   DirectiveList
 	Objects         Objects
-	// AllObjects contains every Object across all schema files.
-	// In single-file mode, AllObjects equals Objects.
-	AllObjects      Objects
 	Inputs          Objects
 	Interfaces      map[string]*Interface
 	ReferencedTypes map[string]*config.TypeReference
@@ -200,7 +197,17 @@ func BuildData(cfg *config.Config, plugins ...any) (*Data, error) {
 	sort.Slice(s.Objects, func(i, j int) bool {
 		return s.Objects[i].Name < s.Objects[j].Name
 	})
-	s.AllObjects = s.Objects
+
+	// Precompute nested batch paths for all batch fields while all
+	// objects are available. In follow-schema layout each per-file Data
+	// only gets a subset of Objects, so this must run here.
+	for _, obj := range s.Objects {
+		for _, field := range obj.Fields {
+			if field.IsBatch() && !obj.Root {
+				field.NestedBatchPaths = computeNestedBatchPaths(field, s.Schema, cfg.Models, s.Objects)
+			}
+		}
+	}
 
 	sort.Slice(s.Inputs, func(i, j int) bool {
 		return s.Inputs[i].Name < s.Inputs[j].Name

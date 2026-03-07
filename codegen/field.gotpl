@@ -157,7 +157,7 @@ func (ec *executionContext) resolveBatch_{{$object.Name}}_{{$field.Name}}(ctx co
 				result := group.GetFieldResult(key, func() (any, error) {
 					return resolver.{{ $field.GoFieldName }}({{ $field.BatchCallArgs "parents" }})
 				})
-				{{- $nestedPaths := $field.NestedBatchPaths $.Schema $.Config.Models $.AllObjects }}
+				{{- $nestedPaths := $field.NestedBatchPaths }}
 				{{- $childIsObject := eq $field.TypeReference.Definition.Kind "OBJECT" }}
 				{{- if or $nestedPaths $childIsObject }}
 				{{- if not $field.Args }}

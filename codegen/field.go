@@ -39,6 +39,11 @@ type Field struct {
 	HasHaser         bool   // Whether a haser method is available (e.g., HasName())
 	HaserMethodName  string // Name of the haser method
 	Batch            bool   // Enable batch resolver for this field
+
+	// NestedBatchPaths holds precomputed traversal paths from this batch
+	// resolver's return type down to descendant types with batch fields.
+	// Computed during BuildData when all objects are available.
+	NestedBatchPaths []NestedBatchPath
 }
 
 func (b *builder) buildField(obj *Object, field *ast.FieldDefinition) (*Field, error) {
@@ -989,11 +994,11 @@ type NestedBatchStep struct {
 	AssertGoType types.Type // Go type to assert to for union members
 }
 
-// NestedBatchPaths computes traversal paths from this field's return type
+// computeNestedBatchPaths computes traversal paths from this field's return type
 // down to descendant OBJECT types that have batch-enabled fields.
 // This is used for nested batch propagation through intermediate types
 // (e.g. ProfilesConnection → Edges[] → Node → Profile with coverBatch).
-func (f *Field) NestedBatchPaths(schema *ast.Schema, models config.TypeMap, objects Objects) []NestedBatchPath {
+func computeNestedBatchPaths(f *Field, schema *ast.Schema, models config.TypeMap, objects Objects) []NestedBatchPath {
 	if f.TypeReference == nil || f.TypeReference.Definition == nil {
 		return nil
 	}

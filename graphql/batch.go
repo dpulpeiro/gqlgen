@@ -48,8 +48,39 @@ type BatchParentState struct {
 
 // BatchParentGroup represents a group of parent objects being resolved together.
 type BatchParentGroup struct {
-	Parents any
-	fields  sync.Map
+	Parents  any
+	fields   sync.Map
+	indexMap map[any]int // pointer → index for IndexOf
+}
+
+// NewBatchParentGroup creates a BatchParentGroup with an indexMap for pointer-based
+// index lookup. This is used for nested batch propagation through intermediate types
+// (e.g. connection → edges → node) where the path doesn't contain a PathIndex.
+//
+// Duplicate pointers are deduplicated: when the same pointer appears at multiple
+// positions (common with dataloaders that return cached pointers), it is included
+// only once in the Parents slice so the batch resolver is not called with
+// redundant inputs and IndexOf always returns a unique index.
+func NewBatchParentGroup[T any](parents []T) *BatchParentGroup {
+	m := make(map[any]int, len(parents))
+	deduped := make([]T, 0, len(parents))
+	for _, p := range parents {
+		if _, exists := m[any(p)]; !exists {
+			m[any(p)] = len(deduped)
+			deduped = append(deduped, p)
+		}
+	}
+	return &BatchParentGroup{Parents: deduped, indexMap: m}
+}
+
+// IndexOf returns the index of obj in this group's parent slice.
+// Uses pointer identity via the indexMap built at construction time.
+func (g *BatchParentGroup) IndexOf(obj any) (int, bool) {
+	if g == nil || g.indexMap == nil {
+		return 0, false
+	}
+	idx, ok := g.indexMap[obj]
+	return idx, ok
 }
 
 // BatchFieldResult represents the cached result of a batch field resolution.
@@ -58,10 +89,69 @@ type BatchFieldResult struct {
 	done    chan struct{}
 	Results any
 	Err     error
+
+	// Shared child batch parent group: all goroutines processing results from
+	// the same batch call share this group so that GetFieldResult deduplication
+	// works correctly for descendant batch resolvers.
+	childGroup     *BatchParentGroup
+	childGroupOnce sync.Once
+
+	// Shared nested groups: lazily computed once from the batch results.
+	// Used for propagating batch groups through intermediate types.
+	nestedGroups     map[string]*BatchParentGroup
+	nestedGroupsOnce sync.Once
 }
 
+// GetChildGroup returns a shared BatchParentGroup for the child type, creating
+// one if needed. All goroutines processing results from the same batch call
+// share this group so that descendant batch resolvers can deduplicate via
+// GetFieldResult's sync.Once.
+func (r *BatchFieldResult) GetChildGroup() *BatchParentGroup {
+	r.childGroupOnce.Do(func() {
+		r.childGroup = &BatchParentGroup{Parents: r.Results}
+	})
+	return r.childGroup
+}
+
+// GetNestedGroups returns the shared nested groups map, computing it once
+// using the provided function. All goroutines processing results from the
+// same batch call share these groups so that descendant batch resolvers
+// through intermediate types can deduplicate correctly.
+func (r *BatchFieldResult) GetNestedGroups(compute func() map[string]*BatchParentGroup) map[string]*BatchParentGroup {
+	r.nestedGroupsOnce.Do(func() {
+		r.nestedGroups = compute()
+	})
+	return r.nestedGroups
+}
+
+// BatchChildContext wraps a batch resolver result with metadata for nested
+// batch propagation. When resolveField detects this wrapper, it unwraps the
+// result and enriches the context with batch parent information and a scope
+// so that descendant batch resolvers can batch their calls.
+type BatchChildContext struct {
+	Result       any
+	ChildType    string
+	ChildGroup   *BatchParentGroup // shared across all goroutines from the same batch
+	ChildIndex   int
+	NestedGroups map[string]*BatchParentGroup
+}
+
+type batchResultIndexKey struct{}
+
 // WithBatchParents adds a batch parent group to the context.
+// It also clears any stale batchResultIndex from a parent scope: list fields
+// provide a PathIndex in the path so the fallback index is not needed and
+// would interfere with IndexOf-based lookups for nested groups propagated
+// through intermediate types (e.g. connection → edges → node).
 func WithBatchParents(ctx context.Context, typeName string, parents any) context.Context {
+	ctx = context.WithValue(ctx, batchResultIndexKey{}, nil)
+	return withBatchParentGroup(ctx, typeName, &BatchParentGroup{Parents: parents})
+}
+
+// withBatchParentGroup adds an existing BatchParentGroup to the context.
+// This is used for nested batch propagation where all goroutines must share
+// the same group instance for GetFieldResult deduplication to work.
+func withBatchParentGroup(ctx context.Context, typeName string, group *BatchParentGroup) context.Context {
 	prev, _ := ctx.Value(batchContextKey{}).(*BatchParentState)
 	var groups map[string]*BatchParentGroup
 	if prev != nil {
@@ -70,9 +160,17 @@ func WithBatchParents(ctx context.Context, typeName string, parents any) context
 	} else {
 		groups = make(map[string]*BatchParentGroup, 1)
 	}
-	groups[typeName] = &BatchParentGroup{Parents: parents}
+	groups[typeName] = group
 
 	return context.WithValue(ctx, batchContextKey{}, &BatchParentState{groups: groups})
+}
+
+// withBatchResultIndex stores the batch result index in context for nested
+// batch propagation. This is used when batch results (not list fields) set
+// batch parent context — the path won't contain a PathIndex, so
+// BatchParentIndex falls back to this value.
+func withBatchResultIndex(ctx context.Context, idx int) context.Context {
+	return context.WithValue(ctx, batchResultIndexKey{}, idx)
 }
 
 // GetBatchParentGroup retrieves the batch parent group for a given type name from context.
@@ -96,20 +194,30 @@ func (g *BatchParentGroup) GetFieldResult(
 	result := res.(*BatchFieldResult)
 	result.once.Do(func() {
 		defer close(result.done)
+		defer func() {
+			if r := recover(); r != nil {
+				result.Err = fmt.Errorf("panic in batch resolver: %v", r)
+			}
+		}()
 		result.Results, result.Err = resolve()
 	})
 	<-result.done
 	return result
 }
 
-// BatchParentIndex returns the index of the current parent in the batch from the path.
+// BatchParentIndex returns the index of the current parent in the batch.
+// It first checks the path for a PathIndex (standard list-level batching),
+// then falls back to a batch result index override (nested batch propagation).
 func BatchParentIndex(ctx context.Context) (ast.PathIndex, bool) {
 	path := GetPath(ctx)
-	if len(path) < 2 {
-		return 0, false
+	if len(path) >= 2 {
+		if idx, ok := path[len(path)-2].(ast.PathIndex); ok {
+			return idx, true
+		}
 	}
-	if idx, ok := path[len(path)-2].(ast.PathIndex); ok {
-		return idx, true
+	// Fallback: check for batch result index (set by nested batch propagation)
+	if idx, ok := ctx.Value(batchResultIndexKey{}).(int); ok {
+		return ast.PathIndex(idx), true
 	}
 	return 0, false
 }
@@ -165,12 +273,18 @@ func AddBatchError(ctx context.Context, index int, err error) {
 }
 
 // ResolveBatchGroupResult handles batch resolver results for grouped parents.
+// An optional childTypeName can be provided to enable nested batch propagation:
+// when non-empty and the result type is an object, the individual result is
+// wrapped in a BatchChildContext so that resolveField can set batch parent
+// context for child resolvers.
 func ResolveBatchGroupResult[T any](
 	ctx context.Context,
 	idx ast.PathIndex,
 	parentsLen int,
 	result *BatchFieldResult,
 	fieldName string,
+	childTypeName string,
+	nestedGroups map[string]*BatchParentGroup,
 ) (any, error) {
 	idxInt := int(idx)
 	if result.Err != nil {
@@ -217,7 +331,7 @@ func ResolveBatchGroupResult[T any](
 				AddBatchError(ctx, idxInt, err)
 				return nil, nil
 			}
-			return results[idxInt], nil
+			return wrapBatchChildContext(results[idxInt], result, childTypeName, idxInt, nestedGroups), nil
 		}
 		AddBatchError(ctx, idxInt, result.Err)
 		return nil, nil
@@ -250,7 +364,21 @@ func ResolveBatchGroupResult[T any](
 		))
 		return nil, nil
 	}
-	return results[idxInt], nil
+	return wrapBatchChildContext(results[idxInt], result, childTypeName, idxInt, nestedGroups), nil
+}
+
+func wrapBatchChildContext(value any, result *BatchFieldResult, childTypeName string, idx int, nestedGroups map[string]*BatchParentGroup) any {
+	if childTypeName == "" && len(nestedGroups) == 0 {
+		return value
+	}
+	group := result.GetChildGroup()
+	return &BatchChildContext{
+		Result:       value,
+		ChildType:    childTypeName,
+		ChildGroup:   group,
+		ChildIndex:   idx,
+		NestedGroups: nestedGroups,
+	}
 }
 
 // ResolveBatchSingleResult handles batch resolver results for a single parent.

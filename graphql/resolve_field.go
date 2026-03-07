@@ -118,6 +118,22 @@ func resolveField[T, R any](
 		oc.Error(ctx, err)
 		return defaultResult
 	}
+
+	// Unwrap batch child context for nested batch propagation.
+	// When a batch resolver returns results with a childTypeName, each
+	// individual result is wrapped in a BatchChildContext. We unwrap it
+	// here and enrich the context so descendant batch resolvers can batch.
+	if bcc, ok := resTmp.(*BatchChildContext); ok {
+		if bcc.ChildType != "" && bcc.ChildGroup != nil {
+			ctx = withBatchParentGroup(ctx, bcc.ChildType, bcc.ChildGroup)
+			ctx = withBatchResultIndex(ctx, bcc.ChildIndex)
+		}
+		for typeName, group := range bcc.NestedGroups {
+			ctx = withBatchParentGroup(ctx, typeName, group)
+		}
+		resTmp = bcc.Result
+	}
+
 	if resTmp == nil {
 		if nonNull {
 			if !HasFieldError(ctx, fc) {

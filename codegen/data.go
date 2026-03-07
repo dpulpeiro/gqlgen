@@ -25,8 +25,12 @@ type Data struct {
 	// If a single Data instance is used for the entire schema, AllDirectives and Directives()
 	// will be identical.
 	// AllDirectives should rarely be used directly.
-	AllDirectives   DirectiveList
-	Objects         Objects
+	AllDirectives DirectiveList
+	Objects       Objects
+	// If a schema is broken up into multiple Data instances (follow-schema layout),
+	// AllObjects contains every Object across all schema files.
+	// In single-file mode, AllObjects equals Objects.
+	AllObjects      Objects
 	Inputs          Objects
 	Interfaces      map[string]*Interface
 	ReferencedTypes map[string]*config.TypeReference
@@ -197,6 +201,7 @@ func BuildData(cfg *config.Config, plugins ...any) (*Data, error) {
 	sort.Slice(s.Objects, func(i, j int) bool {
 		return s.Objects[i].Name < s.Objects[j].Name
 	})
+	s.AllObjects = s.Objects
 
 	sort.Slice(s.Inputs, func(i, j int) bool {
 		return s.Inputs[i].Name < s.Inputs[j].Name

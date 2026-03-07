@@ -42,6 +42,11 @@ models:
           batch: true
       profileConnectionNonBatch:
           resolver: true
+      childUserBatch:
+          resolver: true
+          batch: true
+      childUserNonBatch:
+          resolver: true
   Profile:
     fields:
       coverBatch:

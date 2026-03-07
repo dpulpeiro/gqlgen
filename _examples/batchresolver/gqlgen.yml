@@ -42,6 +42,18 @@ models:
           batch: true
       profileConnectionNonBatch:
           resolver: true
+      detailsBatch:
+          resolver: true
+          batch: true
+      detailsNonBatch:
+          resolver: true
+  Details:
+    fields:
+      profileBatch:
+          resolver: true
+          batch: true
+      profileNonBatch:
+          resolver: true
   Profile:
     fields:
       coverBatch:

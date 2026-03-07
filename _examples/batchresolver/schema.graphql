@@ -28,6 +28,15 @@ type User {
     profileNonBatch: Profile
     profileConnectionBatch: ProfilesConnection
     profileConnectionNonBatch: ProfilesConnection
+
+    detailsBatch: Details
+    detailsNonBatch: Details
+}
+
+type Details {
+    name: String!
+    profileBatch: Profile
+    profileNonBatch: Profile
 }
 
 type Profile {

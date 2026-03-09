@@ -586,7 +586,7 @@ func (ec *executionContext) resolveBatch_Profile_coverBatch(ctx context.Context,
 		parents, ok := group.Parents.([]*Profile)
 		if ok {
 			idx, ok := graphql.BatchParentIndex(ctx)
-			if ok {
+			if ok && int(idx) >= 0 && int(idx) < len(parents) && parents[int(idx)] == obj {
 				key := field.Alias
 				if key == "" {
 					key = field.Name
@@ -600,6 +600,7 @@ func (ec *executionContext) resolveBatch_Profile_coverBatch(ctx context.Context,
 					len(parents),
 					result,
 					"Profile.coverBatch",
+					"Image",
 				)
 			}
 		}
@@ -991,7 +992,7 @@ func (ec *executionContext) resolveBatch_User_nullableBatch(ctx context.Context,
 		parents, ok := group.Parents.([]*User)
 		if ok {
 			idx, ok := graphql.BatchParentIndex(ctx)
-			if ok {
+			if ok && int(idx) >= 0 && int(idx) < len(parents) && parents[int(idx)] == obj {
 				key := field.Alias
 				if key == "" {
 					key = field.Name
@@ -1005,6 +1006,7 @@ func (ec *executionContext) resolveBatch_User_nullableBatch(ctx context.Context,
 					len(parents),
 					result,
 					"User.nullableBatch",
+					"Profile",
 				)
 			}
 		}
@@ -1111,7 +1113,7 @@ func (ec *executionContext) resolveBatch_User_nullableBatchWithArg(ctx context.C
 		parents, ok := group.Parents.([]*User)
 		if ok {
 			idx, ok := graphql.BatchParentIndex(ctx)
-			if ok {
+			if ok && int(idx) >= 0 && int(idx) < len(parents) && parents[int(idx)] == obj {
 				key := field.Alias
 				if key == "" {
 					key = field.Name
@@ -1125,6 +1127,7 @@ func (ec *executionContext) resolveBatch_User_nullableBatchWithArg(ctx context.C
 					len(parents),
 					result,
 					"User.nullableBatchWithArg",
+					"Profile",
 				)
 			}
 		}
@@ -1231,7 +1234,7 @@ func (ec *executionContext) resolveBatch_User_nonNullableBatch(ctx context.Conte
 		parents, ok := group.Parents.([]*User)
 		if ok {
 			idx, ok := graphql.BatchParentIndex(ctx)
-			if ok {
+			if ok && int(idx) >= 0 && int(idx) < len(parents) && parents[int(idx)] == obj {
 				key := field.Alias
 				if key == "" {
 					key = field.Name
@@ -1245,6 +1248,7 @@ func (ec *executionContext) resolveBatch_User_nonNullableBatch(ctx context.Conte
 					len(parents),
 					result,
 					"User.nonNullableBatch",
+					"Profile",
 				)
 			}
 		}
@@ -1339,7 +1343,7 @@ func (ec *executionContext) resolveBatch_User_directiveNullableBatch(ctx context
 		parents, ok := group.Parents.([]*User)
 		if ok {
 			idx, ok := graphql.BatchParentIndex(ctx)
-			if ok {
+			if ok && int(idx) >= 0 && int(idx) < len(parents) && parents[int(idx)] == obj {
 				key := field.Alias
 				if key == "" {
 					key = field.Name
@@ -1353,6 +1357,7 @@ func (ec *executionContext) resolveBatch_User_directiveNullableBatch(ctx context
 					len(parents),
 					result,
 					"User.directiveNullableBatch",
+					"Profile",
 				)
 			}
 		}
@@ -1459,7 +1464,7 @@ func (ec *executionContext) resolveBatch_User_directiveNullableBatchWithArg(ctx 
 		parents, ok := group.Parents.([]*User)
 		if ok {
 			idx, ok := graphql.BatchParentIndex(ctx)
-			if ok {
+			if ok && int(idx) >= 0 && int(idx) < len(parents) && parents[int(idx)] == obj {
 				key := field.Alias
 				if key == "" {
 					key = field.Name
@@ -1473,6 +1478,7 @@ func (ec *executionContext) resolveBatch_User_directiveNullableBatchWithArg(ctx 
 					len(parents),
 					result,
 					"User.directiveNullableBatchWithArg",
+					"Profile",
 				)
 			}
 		}
@@ -1579,7 +1585,7 @@ func (ec *executionContext) resolveBatch_User_directiveNonNullableBatch(ctx cont
 		parents, ok := group.Parents.([]*User)
 		if ok {
 			idx, ok := graphql.BatchParentIndex(ctx)
-			if ok {
+			if ok && int(idx) >= 0 && int(idx) < len(parents) && parents[int(idx)] == obj {
 				key := field.Alias
 				if key == "" {
 					key = field.Name
@@ -1593,6 +1599,7 @@ func (ec *executionContext) resolveBatch_User_directiveNonNullableBatch(ctx cont
 					len(parents),
 					result,
 					"User.directiveNonNullableBatch",
+					"Profile",
 				)
 			}
 		}
@@ -1687,7 +1694,7 @@ func (ec *executionContext) resolveBatch_User_profileBatch(ctx context.Context, 
 		parents, ok := group.Parents.([]*User)
 		if ok {
 			idx, ok := graphql.BatchParentIndex(ctx)
-			if ok {
+			if ok && int(idx) >= 0 && int(idx) < len(parents) && parents[int(idx)] == obj {
 				key := field.Alias
 				if key == "" {
 					key = field.Name
@@ -1701,6 +1708,7 @@ func (ec *executionContext) resolveBatch_User_profileBatch(ctx context.Context, 
 					len(parents),
 					result,
 					"User.profileBatch",
+					"Profile",
 				)
 			}
 		}
@@ -1793,7 +1801,7 @@ func (ec *executionContext) resolveBatch_User_profileConnectionBatch(ctx context
 		parents, ok := group.Parents.([]*User)
 		if ok {
 			idx, ok := graphql.BatchParentIndex(ctx)
-			if ok {
+			if ok && int(idx) >= 0 && int(idx) < len(parents) && parents[int(idx)] == obj {
 				key := field.Alias
 				if key == "" {
 					key = field.Name
@@ -1807,6 +1815,7 @@ func (ec *executionContext) resolveBatch_User_profileConnectionBatch(ctx context
 					len(parents),
 					result,
 					"User.profileConnectionBatch",
+					"ProfilesConnection",
 				)
 			}
 		}

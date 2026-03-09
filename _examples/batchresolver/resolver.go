@@ -22,6 +22,7 @@ type Resolver struct {
 	batchResultsWrongLen    bool
 	batchResultsLen         int
 	batchErrListIdxs        map[int]struct{}
+	details                 []*Details
 
 	// Call counters for the nested batch performance test (atomic for -race safety)
 	profileBatchCalls              atomic.Int32
@@ -30,6 +31,10 @@ type Resolver struct {
 	coverNonBatchCalls             atomic.Int32
 	profileConnectionBatchCalls    atomic.Int32
 	profileConnectionNonBatchCalls atomic.Int32
+	detailsBatchCalls              atomic.Int32
+	detailsNonBatchCalls           atomic.Int32
+	detailsProfileBatchCalls       atomic.Int32
+	detailsProfileNonBatchCalls    atomic.Int32
 }
 
 func (r *Resolver) userIndex(obj *User) int {
@@ -38,6 +43,18 @@ func (r *Resolver) userIndex(obj *User) int {
 	}
 	for i := range r.users {
 		if r.users[i] == obj {
+			return i
+		}
+	}
+	return -1
+}
+
+func (r *Resolver) detailIndex(obj *Details) int {
+	if obj == nil {
+		return -1
+	}
+	for i := range r.details {
+		if r.details[i] == obj {
 			return i
 		}
 	}

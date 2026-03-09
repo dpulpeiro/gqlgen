@@ -533,16 +533,13 @@ func TestBatchResolver_Nested_CallCount(t *testing.T) {
 		resolver.profileBatchCalls.Load(),
 		"profileBatch should be called once for all users",
 	)
-	// TODO: coverBatch is called once per profile (not batched) because profiles
-	// are resolved as individual values, not as a list. The batch parent context
-	// for "Profile" is only set when marshalling a [Profile] list field.
-	// Nested batching should propagate the batch parent context from batch
-	// resolver results so coverBatchCalls == 1 here.
+	// Nested batching propagates the Profile batch group from profileBatch
+	// results, so coverBatch is called once for all profiles.
 	require.Equal(
 		t,
-		int32(n),
+		int32(1),
 		resolver.coverBatchCalls.Load(),
-		"coverBatch called once per profile (no list parent context)",
+		"coverBatch should be called once (nested batch propagation)",
 	)
 
 	// --- Non-batch path ---
@@ -694,6 +691,115 @@ func TestBatchResolver_Nested_Connection_CallCount(t *testing.T) {
 	// --- Verify both paths produce identical data ---
 	require.Equal(
 		t,
+		marshalJSON(t, batchResp),
+		marshalJSON(t, nonBatchResp),
+		"batch and non-batch should return identical data",
+	)
+}
+
+// TestBatchResolver_Nested_Details_CallCount verifies that nested batch
+// propagation works through intermediate types. The path
+// users.N.detailsBatch.profileBatch.coverBatch exercises BatchParentIndex
+// scanning backwards through intermediate fields (detailsBatch, profileBatch)
+// to find the ancestor list index N.
+func TestBatchResolver_Nested_Details_CallCount(t *testing.T) {
+	const n = 10
+	users := make([]*User, n)
+	details := make([]*Details, n)
+	profiles := make([]*Profile, n)
+	images := make([]*Image, n)
+	for i := 0; i < n; i++ {
+		users[i] = &User{}
+		details[i] = &Details{Name: fmt.Sprintf("d%d", i)}
+		profiles[i] = &Profile{ID: fmt.Sprintf("p%d", i)}
+		images[i] = &Image{URL: fmt.Sprintf("https://img/%d", i)}
+	}
+	resolver := &Resolver{
+		users:         users,
+		details:       details,
+		profiles:      profiles,
+		images:        images,
+		profileErrIdx: -1,
+	}
+	client := newTestClient(resolver)
+
+	type graphqlResp struct {
+		Users []struct {
+			Details *struct {
+				Name    string `json:"name"`
+				Profile *struct {
+					ID    string `json:"id"`
+					Cover *struct {
+						URL string `json:"url"`
+					} `json:"cover"`
+				} `json:"profile"`
+			} `json:"details"`
+		} `json:"users"`
+	}
+
+	assertData := func(t *testing.T, resp graphqlResp, label string) {
+		t.Helper()
+		require.Len(t, resp.Users, n)
+		for i, u := range resp.Users {
+			require.NotNil(t, u.Details, "%s user %d details nil", label, i)
+			require.Equal(t, fmt.Sprintf("d%d", i), u.Details.Name)
+			require.NotNil(t, u.Details.Profile, "%s user %d profile nil", label, i)
+			require.Equal(t, fmt.Sprintf("p%d", i), u.Details.Profile.ID)
+			require.NotNil(t, u.Details.Profile.Cover, "%s user %d cover nil", label, i)
+			require.Equal(t, fmt.Sprintf("https://img/%d", i), u.Details.Profile.Cover.URL)
+		}
+	}
+
+	// --- Batch path: 3 levels of nested batching ---
+	// users → detailsBatch → profileBatch → coverBatch
+	// Each batch resolver should be called exactly once.
+
+	var batchResp graphqlResp
+	err := client.Post(`query {
+		users {
+			details: detailsBatch {
+				name
+				profile: profileBatch {
+					id
+					cover: coverBatch { url }
+				}
+			}
+		}
+	}`, &batchResp)
+	require.NoError(t, err)
+	assertData(t, batchResp, "batch")
+	require.Equal(t, int32(1), resolver.detailsBatchCalls.Load(),
+		"detailsBatch should be called once for all users")
+	require.Equal(t, int32(1), resolver.detailsProfileBatchCalls.Load(),
+		"Details.profileBatch should be called once (nested batch from detailsBatch)")
+	require.Equal(t, int32(1), resolver.coverBatchCalls.Load(),
+		"Profile.coverBatch should be called once (nested batch from profileBatch)")
+
+	// --- Non-batch path ---
+
+	var nonBatchResp graphqlResp
+	err = client.Post(`query {
+		users {
+			details: detailsNonBatch {
+				name
+				profile: profileNonBatch {
+					id
+					cover: coverNonBatch { url }
+				}
+			}
+		}
+	}`, &nonBatchResp)
+	require.NoError(t, err)
+	assertData(t, nonBatchResp, "non-batch")
+	require.Equal(t, int32(n), resolver.detailsNonBatchCalls.Load(),
+		"detailsNonBatch should be called once per user")
+	require.Equal(t, int32(n), resolver.detailsProfileNonBatchCalls.Load(),
+		"Details.profileNonBatch should be called once per detail")
+	require.Equal(t, int32(n), resolver.coverNonBatchCalls.Load(),
+		"coverNonBatch should be called once per profile")
+
+	// --- Verify both paths produce identical data ---
+	require.Equal(t,
 		marshalJSON(t, batchResp),
 		marshalJSON(t, nonBatchResp),
 		"batch and non-batch should return identical data",

@@ -3,6 +3,7 @@ package graphql
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -138,4 +139,125 @@ func TestResolveBatchSingleResult_ErrorLenMismatch(t *testing.T) {
 			"parents (index 0)",
 		errs[0].Message,
 	)
+}
+
+func TestGetFieldResult_DeduplicatesAcrossGoroutines(t *testing.T) {
+	group := &BatchParentGroup{Parents: []string{"a", "b"}}
+
+	var calls int32
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	wg.Add(10)
+	for i := 0; i < 10; i++ {
+		go func() {
+			defer wg.Done()
+			group.GetFieldResult("name", func() (any, error) {
+				mu.Lock()
+				calls++
+				mu.Unlock()
+				return []string{"A", "B"}, nil
+			})
+		}()
+	}
+	wg.Wait()
+	require.Equal(t, int32(1), calls)
+}
+
+func TestGetGroups_ComputedOnceAndShared(t *testing.T) {
+	result := &BatchFieldResult{
+		Results: []string{"x", "y"},
+	}
+
+	var calls int32
+	var mu sync.Mutex
+	compute := func() map[string]*BatchParentGroup {
+		mu.Lock()
+		calls++
+		mu.Unlock()
+		return map[string]*BatchParentGroup{
+			"Profile": {Parents: []string{"x", "y"}},
+			"Child":   {Parents: []string{"c1", "c2"}},
+		}
+	}
+
+	var allGroups [10]map[string]*BatchParentGroup
+	var wg sync.WaitGroup
+	wg.Add(10)
+	for i := 0; i < 10; i++ {
+		i := i
+		go func() {
+			defer wg.Done()
+			allGroups[i] = result.GetGroups(compute)
+		}()
+	}
+	wg.Wait()
+
+	// Compute should be called exactly once.
+	require.Equal(t, int32(1), calls)
+
+	// All goroutines should get the same map instance.
+	for i := 1; i < 10; i++ {
+		require.Same(t, allGroups[0]["Profile"], allGroups[i]["Profile"])
+		require.Same(t, allGroups[0]["Child"], allGroups[i]["Child"])
+	}
+
+	groups := result.GetGroups(compute)
+	require.Equal(t, []string{"x", "y"}, groups["Profile"].Parents)
+	require.Equal(t, []string{"c1", "c2"}, groups["Child"].Parents)
+}
+
+func TestBatchParentIndex_FindsLastPathIndex(t *testing.T) {
+	// Direct list: users.3.name → finds 3
+	ctx := WithResponseContext(context.Background(), DefaultErrorPresenter, nil)
+	ctx = WithPathContext(ctx, NewPathWithField("users"))
+	ctx = WithPathContext(ctx, NewPathWithIndex(3))
+	ctx = WithPathContext(ctx, NewPathWithField("name"))
+
+	idx, ok := BatchParentIndex(ctx)
+	require.True(t, ok)
+	require.Equal(t, ast.PathIndex(3), idx)
+}
+
+func TestBatchParentIndex_ThroughIntermediateFields(t *testing.T) {
+	// Connection: edges.2.node.profile → finds 2
+	ctx := WithResponseContext(context.Background(), DefaultErrorPresenter, nil)
+	ctx = WithPathContext(ctx, NewPathWithField("edges"))
+	ctx = WithPathContext(ctx, NewPathWithIndex(2))
+	ctx = WithPathContext(ctx, NewPathWithField("node"))
+	ctx = WithPathContext(ctx, NewPathWithField("profile"))
+
+	idx, ok := BatchParentIndex(ctx)
+	require.True(t, ok)
+	require.Equal(t, ast.PathIndex(2), idx)
+}
+
+func TestBatchParentIndex_NoPathIndex(t *testing.T) {
+	ctx := WithResponseContext(context.Background(), DefaultErrorPresenter, nil)
+	ctx = WithPathContext(ctx, NewPathWithField("user"))
+	ctx = WithPathContext(ctx, NewPathWithField("profile"))
+
+	_, ok := BatchParentIndex(ctx)
+	require.False(t, ok)
+}
+
+func TestWithBatchParentGroup_SharesGroupInstance(t *testing.T) {
+	ctx := context.Background()
+	group := &BatchParentGroup{Parents: []string{"a", "b"}}
+
+	ctx = withBatchParentGroup(ctx, "User", group)
+
+	got := GetBatchParentGroup(ctx, "User")
+	require.Same(t, group, got)
+}
+
+func TestWithBatchParentGroup_PreservesPreviousGroups(t *testing.T) {
+	ctx := context.Background()
+	group1 := &BatchParentGroup{Parents: []string{"a"}}
+	group2 := &BatchParentGroup{Parents: []string{"b"}}
+
+	ctx = withBatchParentGroup(ctx, "User", group1)
+	ctx = withBatchParentGroup(ctx, "Profile", group2)
+
+	require.Same(t, group1, GetBatchParentGroup(ctx, "User"))
+	require.Same(t, group2, GetBatchParentGroup(ctx, "Profile"))
 }

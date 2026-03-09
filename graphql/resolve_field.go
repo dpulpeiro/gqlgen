@@ -128,6 +128,15 @@ func resolveField[T, R any](
 	}
 	if res, ok := resTmp.(T); ok {
 		fc.Result = res
+		// Propagate batch context from batch resolvers to descendants.
+		// The generated resolveBatch_* template sets fc.BatchChild before
+		// returning; we read it here to enrich the context so child batch
+		// resolvers can deduplicate their calls.
+		if fc.BatchChild != nil {
+			for typeName, group := range fc.BatchChild.Groups {
+				ctx = withBatchParentGroup(ctx, typeName, group)
+			}
+		}
 		return result(ctx, res)
 	}
 	if res, ok := resTmp.(R); ok {

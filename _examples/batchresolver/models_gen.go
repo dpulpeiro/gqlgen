@@ -2,6 +2,12 @@
 
 package batchresolver
 
+type Details struct {
+	Name            string   `json:"name"`
+	ProfileBatch    *Profile `json:"profileBatch,omitempty"`
+	ProfileNonBatch *Profile `json:"profileNonBatch,omitempty"`
+}
+
 type Image struct {
 	URL string `json:"url"`
 }
@@ -42,4 +48,6 @@ type User struct {
 	ProfileNonBatch                  *Profile            `json:"profileNonBatch,omitempty"`
 	ProfileConnectionBatch           *ProfilesConnection `json:"profileConnectionBatch,omitempty"`
 	ProfileConnectionNonBatch        *ProfilesConnection `json:"profileConnectionNonBatch,omitempty"`
+	DetailsBatch                     *Details            `json:"detailsBatch,omitempty"`
+	DetailsNonBatch                  *Details            `json:"detailsNonBatch,omitempty"`
 }

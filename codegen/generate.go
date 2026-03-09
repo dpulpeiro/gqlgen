@@ -120,6 +120,7 @@ func addBuild(filename string, p *ast.Position, data *Data, builds *map[string]*
 
 	(*builds)[filename] = &Data{
 		Config:           &buildConfig,
+		Schema:           data.Schema,
 		QueryRoot:        data.QueryRoot,
 		MutationRoot:     data.MutationRoot,
 		SubscriptionRoot: data.SubscriptionRoot,
